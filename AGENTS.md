@@ -36,6 +36,7 @@ Follow the roadmap steps in `PLAN.md` section 7. Each step should be completed a
 - Use `pydantic` for data validation and settings management
 - Use `structlog` for logging (structured JSON output)
 - Follow standard Python conventions (PEP 8, snake_case for functions/variables, PascalCase for classes)
+- Always run Python, pip, and pytest from the local `.venv` for this repo. If the venv is not activated, use explicit paths like `.venv\\Scripts\\python.exe`, `.venv\\Scripts\\pip.exe`, and `.venv\\Scripts\\pytest.exe`.
 
 ### Testing
 
