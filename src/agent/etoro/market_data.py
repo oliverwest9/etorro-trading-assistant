@@ -133,7 +133,7 @@ def get_instrument_by_symbol(client: EToroClient, symbol: str) -> Instrument:
                 return Instrument.model_validate(item)
         except ValidationError as exc:
             logger.warning(
-                "instrument_validation_failed",
+                "instrument_validation_failed_on_lookup",
                 instrument_id=item.get("instrumentID"),
                 symbol=item.get("symbolFull"),
                 name=item.get("instrumentDisplayName"),
