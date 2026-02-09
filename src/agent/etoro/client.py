@@ -9,6 +9,17 @@ import httpx
 from agent.config import Settings
 
 
+class _CacheEntry:
+    """Cache entry with expiration time."""
+
+    def __init__(self, response: httpx.Response, ttl: float) -> None:
+        self.response = response
+        self.expires_at = time.time() + ttl
+
+    def is_expired(self) -> bool:
+        return time.time() > self.expires_at
+
+
 class EToroError(Exception):
     """Base exception for eToro client errors."""
 
@@ -29,11 +40,14 @@ class EToroClient:
         timeout: float = 10.0,
         max_retries: int = 3,
         backoff_base: float = 0.5,
+        cache_ttl: float = 300.0,
     ) -> None:
         self._settings = settings
         self._timeout = timeout
         self._max_retries = max_retries
         self._backoff_base = backoff_base
+        self._cache_ttl = cache_ttl
+        self._cache: dict[str, _CacheEntry] = {}
         self._client = httpx.Client(base_url=settings.etoro_base_url, timeout=timeout)
 
     def __enter__(self) -> "EToroClient":
@@ -45,14 +59,33 @@ class EToroClient:
     def close(self) -> None:
         self._client.close()
 
+    def clear_cache(self) -> None:
+        """Clear all cached responses."""
+        self._cache.clear()
+
     def get(
         self,
         path: str,
         *,
         params: Mapping[str, Any] | None = None,
         timeout: float | None = None,
+        use_cache: bool = True,
     ) -> httpx.Response:
-        return self.request("GET", path, params=params, timeout=timeout)
+        # Check cache for instruments endpoint
+        if use_cache and path == "/market-data/instruments" and not params:
+            cache_key = path
+            cached = self._cache.get(cache_key)
+            if cached and not cached.is_expired():
+                return cached.response
+
+        response = self.request("GET", path, params=params, timeout=timeout)
+
+        # Cache instruments endpoint response
+        if use_cache and path == "/market-data/instruments" and not params:
+            cache_key = path
+            self._cache[cache_key] = _CacheEntry(response, self._cache_ttl)
+
+        return response
 
     def post(
         self,

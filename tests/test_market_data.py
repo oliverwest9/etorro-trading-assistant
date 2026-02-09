@@ -1,5 +1,7 @@
 """Tests for the eToro market data module."""
 
+import time
+
 import pytest
 from pydantic import ValidationError
 
@@ -353,3 +355,166 @@ def test_invalid_candle_response_raises_validation_error(httpx_mock):
     with EToroClient(_settings()) as client:
         with pytest.raises(ValidationError):
             get_candles(client, 1001, count=10)
+
+
+# =============================================================================
+# Caching Tests
+# =============================================================================
+
+
+def test_search_instruments_uses_cache_on_repeated_calls(httpx_mock):
+    """Verify that search_instruments uses cached response on repeated calls."""
+    httpx_mock.add_response(
+        url="https://example.com/market-data/instruments",
+        json={
+            "instrumentDisplayDatas": [
+                {
+                    "instrumentID": 1001,
+                    "symbolFull": "AAPL",
+                    "instrumentDisplayName": "Apple Inc",
+                    "instrumentTypeID": 5,
+                    "exchangeID": 10,
+                }
+            ]
+        },
+    )
+
+    with EToroClient(_settings()) as client:
+        # First call should hit the API
+        instruments1 = search_instruments(client, "AAPL")
+        assert len(instruments1) == 1
+        assert instruments1[0].symbol == "AAPL"
+
+        # Second call should use cache (no additional request)
+        instruments2 = search_instruments(client, "Apple")
+        assert len(instruments2) == 1
+        assert instruments2[0].symbol == "AAPL"
+
+    # Verify only one request was made
+    assert len(httpx_mock.get_requests()) == 1
+
+
+def test_get_instrument_by_symbol_uses_cache_on_repeated_calls(httpx_mock):
+    """Verify that get_instrument_by_symbol uses cached response."""
+    httpx_mock.add_response(
+        url="https://example.com/market-data/instruments",
+        json={
+            "instrumentDisplayDatas": [
+                {
+                    "instrumentID": 100001,
+                    "symbolFull": "BTC",
+                    "instrumentDisplayName": "Bitcoin",
+                    "instrumentTypeID": 10,
+                },
+                {
+                    "instrumentID": 100002,
+                    "symbolFull": "ETH",
+                    "instrumentDisplayName": "Ethereum",
+                    "instrumentTypeID": 10,
+                },
+            ],
+        },
+    )
+
+    with EToroClient(_settings()) as client:
+        # First call should hit the API
+        btc = get_instrument_by_symbol(client, "BTC")
+        assert btc.symbol == "BTC"
+
+        # Second call for different symbol should use cache
+        eth = get_instrument_by_symbol(client, "ETH")
+        assert eth.symbol == "ETH"
+
+    # Verify only one request was made
+    assert len(httpx_mock.get_requests()) == 1
+
+
+def test_cache_respects_ttl(httpx_mock):
+    """Verify cache expires after TTL."""
+    # Register response twice since cache will expire and request again
+    httpx_mock.add_response(
+        url="https://example.com/market-data/instruments",
+        json={
+            "instrumentDisplayDatas": [
+                {
+                    "instrumentID": 1001,
+                    "symbolFull": "AAPL",
+                    "instrumentDisplayName": "Apple Inc",
+                    "instrumentTypeID": 5,
+                }
+            ]
+        },
+    )
+    httpx_mock.add_response(
+        url="https://example.com/market-data/instruments",
+        json={
+            "instrumentDisplayDatas": [
+                {
+                    "instrumentID": 1001,
+                    "symbolFull": "AAPL",
+                    "instrumentDisplayName": "Apple Inc",
+                    "instrumentTypeID": 5,
+                }
+            ]
+        },
+    )
+
+    # Use a very short TTL
+    with EToroClient(_settings(), cache_ttl=0.1) as client:
+        # First call
+        instruments1 = search_instruments(client, "AAPL")
+        assert len(instruments1) == 1
+
+        # Wait for cache to expire
+        time.sleep(0.2)
+
+        # Second call should hit API again after TTL
+        instruments2 = search_instruments(client, "AAPL")
+        assert len(instruments2) == 1
+
+    # Verify two requests were made
+    assert len(httpx_mock.get_requests()) == 2
+
+
+def test_clear_cache_forces_new_request(httpx_mock):
+    """Verify clear_cache() forces a new API request."""
+    # Register response twice since we'll call it twice
+    httpx_mock.add_response(
+        url="https://example.com/market-data/instruments",
+        json={
+            "instrumentDisplayDatas": [
+                {
+                    "instrumentID": 1001,
+                    "symbolFull": "AAPL",
+                    "instrumentDisplayName": "Apple Inc",
+                    "instrumentTypeID": 5,
+                }
+            ]
+        },
+    )
+    httpx_mock.add_response(
+        url="https://example.com/market-data/instruments",
+        json={
+            "instrumentDisplayDatas": [
+                {
+                    "instrumentID": 1001,
+                    "symbolFull": "AAPL",
+                    "instrumentDisplayName": "Apple Inc",
+                    "instrumentTypeID": 5,
+                }
+            ]
+        },
+    )
+
+    with EToroClient(_settings()) as client:
+        # First call
+        search_instruments(client, "AAPL")
+
+        # Clear cache
+        client.clear_cache()
+
+        # Second call should hit API again
+        search_instruments(client, "AAPL")
+
+    # Verify two requests were made
+    assert len(httpx_mock.get_requests()) == 2
