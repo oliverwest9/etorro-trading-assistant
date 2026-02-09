@@ -385,7 +385,7 @@ def test_search_instruments_logs_validation_errors(httpx_mock, capsys):
     # Should return only the valid instrument
     assert len(instruments) == 1
     assert instruments[0].symbol == "AAPL"
-    
+
     # Should have logged the validation error for the malformed entry
     captured = capsys.readouterr()
     assert "instrument_validation_failed" in captured.out
@@ -421,7 +421,7 @@ def test_get_instrument_by_symbol_logs_validation_errors(httpx_mock, capsys):
 
     assert instrument.instrument_id == 1002
     assert instrument.symbol == "BTC"
-    
+
     # Should have logged the validation error for the malformed entry
     captured = capsys.readouterr()
     assert "instrument_validation_failed_on_lookup" in captured.out
