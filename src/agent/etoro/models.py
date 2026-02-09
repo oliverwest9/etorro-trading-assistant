@@ -30,9 +30,9 @@ class Instrument(BaseModel):
     def asset_class(self) -> str:
         """Derive asset class from instrument type ID."""
         # Mapping based on observation:
-        # 1: Currencies?
-        # 2: Indices/Commodities?
-        # 4: Futures?
+        # 1: Forex (Currencies)
+        # 2: Indices
+        # 4: Commodities (Oil, Gold, etc.)
         # 5: Stocks
         # 6: ETFs
         # 10: Cryptocurrencies

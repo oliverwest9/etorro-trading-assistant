@@ -353,3 +353,86 @@ def test_invalid_candle_response_raises_validation_error(httpx_mock):
     with EToroClient(_settings()) as client:
         with pytest.raises(ValidationError):
             get_candles(client, 1001, count=10)
+
+
+# =============================================================================
+# Instrument Type Mapping Tests
+# =============================================================================
+
+
+def test_instrument_type_id_1_maps_to_forex():
+    """Instrument type ID 1 should map to Forex."""
+    from agent.etoro.models import Instrument
+    
+    instrument = Instrument(
+        instrumentID=1,
+        symbolFull="EUR/USD",
+        instrumentDisplayName="Euro vs US Dollar",
+        instrumentTypeID=1,
+    )
+    assert instrument.asset_class == "Forex"
+
+
+def test_instrument_type_id_4_maps_to_commodities():
+    """Instrument type ID 4 should map to Commodities."""
+    from agent.etoro.models import Instrument
+    
+    instrument = Instrument(
+        instrumentID=2,
+        symbolFull="GOLD",
+        instrumentDisplayName="Gold",
+        instrumentTypeID=4,
+    )
+    assert instrument.asset_class == "Commodities"
+
+
+def test_instrument_type_id_5_maps_to_stocks():
+    """Instrument type ID 5 should map to Stocks."""
+    from agent.etoro.models import Instrument
+    
+    instrument = Instrument(
+        instrumentID=3,
+        symbolFull="AAPL",
+        instrumentDisplayName="Apple Inc",
+        instrumentTypeID=5,
+    )
+    assert instrument.asset_class == "Stocks"
+
+
+def test_instrument_type_id_6_maps_to_etf():
+    """Instrument type ID 6 should map to ETF."""
+    from agent.etoro.models import Instrument
+    
+    instrument = Instrument(
+        instrumentID=4,
+        symbolFull="SPY",
+        instrumentDisplayName="SPDR S&P 500 ETF",
+        instrumentTypeID=6,
+    )
+    assert instrument.asset_class == "ETF"
+
+
+def test_instrument_type_id_10_maps_to_crypto():
+    """Instrument type ID 10 should map to Crypto."""
+    from agent.etoro.models import Instrument
+    
+    instrument = Instrument(
+        instrumentID=5,
+        symbolFull="BTC",
+        instrumentDisplayName="Bitcoin",
+        instrumentTypeID=10,
+    )
+    assert instrument.asset_class == "Crypto"
+
+
+def test_instrument_unknown_type_id_maps_to_other():
+    """Unknown instrument type IDs should map to Other."""
+    from agent.etoro.models import Instrument
+    
+    instrument = Instrument(
+        instrumentID=6,
+        symbolFull="UNKNOWN",
+        instrumentDisplayName="Unknown Instrument",
+        instrumentTypeID=999,
+    )
+    assert instrument.asset_class == "Other"
