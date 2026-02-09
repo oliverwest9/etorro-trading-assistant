@@ -1,6 +1,7 @@
 """Tests for the eToro market data module."""
 
 import pytest
+import structlog
 from pydantic import ValidationError
 
 from agent.config import Settings
@@ -455,3 +456,76 @@ def test_invalid_candle_response_raises_validation_error(httpx_mock):
     with EToroClient(_settings()) as client:
         with pytest.raises(ValidationError):
             get_candles(client, 1001, count=10)
+
+
+def test_search_instruments_logs_validation_errors(httpx_mock, capsys):
+    """Verify that malformed instruments are logged during search."""
+    httpx_mock.add_response(
+        url="https://example.com/market-data/instruments",
+        json={
+            "instrumentDisplayDatas": [
+                {
+                    "instrumentID": 1001,
+                    "symbolFull": "AAPL",
+                    "instrumentDisplayName": "Apple Inc",
+                    "instrumentTypeID": 5,
+                    "exchangeID": 10,
+                },
+                {
+                    # Malformed entry - missing required fields
+                    "instrumentID": 1002,
+                    "symbolFull": "BAD",
+                    # Missing instrumentDisplayName, instrumentTypeID
+                },
+            ]
+        },
+    )
+
+    with EToroClient(_settings()) as client:
+        instruments = search_instruments(client, "A")
+
+    # Should return only the valid instrument
+    assert len(instruments) == 1
+    assert instruments[0].symbol == "AAPL"
+
+    # Should have logged the validation error for the malformed entry
+    captured = capsys.readouterr()
+    assert "instrument_validation_failed" in captured.out
+    assert "1002" in captured.out  # instrument_id
+    assert "BAD" in captured.out  # symbol
+
+
+def test_get_instrument_by_symbol_logs_validation_errors(httpx_mock, capsys):
+    """Verify that validation errors are logged during exact symbol lookup."""
+    httpx_mock.add_response(
+        url="https://example.com/market-data/instruments",
+        json={
+            "instrumentDisplayDatas": [
+                {
+                    # Malformed entry that matches the symbol but fails validation
+                    "instrumentID": 1001,
+                    "symbolFull": "BTC",
+                    # Missing required instrumentDisplayName, instrumentTypeID
+                },
+                {
+                    "instrumentID": 1002,
+                    "symbolFull": "BTC",
+                    "instrumentDisplayName": "Bitcoin",
+                    "instrumentTypeID": 10,
+                },
+            ],
+        },
+    )
+
+    with EToroClient(_settings()) as client:
+        # Should skip the first malformed entry and return the second valid one
+        instrument = get_instrument_by_symbol(client, "BTC")
+
+    assert instrument.instrument_id == 1002
+    assert instrument.symbol == "BTC"
+
+    # Should have logged the validation error for the malformed entry
+    captured = capsys.readouterr()
+    assert "instrument_validation_failed_on_lookup" in captured.out
+    assert "1001" in captured.out  # instrument_id
+    assert "BTC" in captured.out  # symbol
