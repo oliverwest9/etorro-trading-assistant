@@ -105,6 +105,27 @@ Do not create new top-level directories or reorganise the structure without expl
 - Do not create documentation files beyond what already exists (PLAN.md, AGENTS.md)
 - Do not skip writing tests for any new functionality
 
+## Work Tracker
+
+`PLAN.md` section 10 contains a **Work Tracker** table that maps every PR to its roadmap steps, deliverables, and current status. This table must be kept up to date:
+
+- When starting work on a PR, set its status to `In Progress`
+- When opening the PR for review, set its status to `In Review`
+- When the PR is merged, set its status to `Done`
+- If a PR is split into smaller PRs, update the table to reflect the new breakdown
+- Never remove rows from the table - only add or update them
+
+### Definition of Done
+
+A PR may only be marked as `Done` when **all** of the following are met:
+
+1. **Acceptance criteria** - every checkbox in the step's acceptance criteria (in `PLAN.md` section 7) is satisfied
+2. **Tests pass** - `pytest` exits 0 with no failures or errors
+3. **No regressions** - all previously passing tests still pass
+4. **Code review** - PR has been reviewed and merged to `main`
+
+Do not mark a PR as `Done` if any acceptance criterion is unmet, even if the code is merged. Flag the gap and address it before updating the status.
+
 ## Commit Conventions
 
 - Use conventional commit style: `feat:`, `fix:`, `test:`, `refactor:`, `docs:`, `chore:`

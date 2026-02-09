@@ -409,6 +409,16 @@ Each step is designed to be independently testable before moving on. We start wi
 - Set up `pytest` configuration
 - Verify: `pip install -e ".[dev]"` and `pytest` both succeed (with zero tests)
 
+**Acceptance Criteria:**
+- [ ] `pyproject.toml` exists with all dependencies from section 5, including `[dev]` extras
+- [ ] Full directory structure under `src/agent/` matches section 4 (all `__init__.py` files present)
+- [ ] `.env.example` contains all variables from section 8 with placeholder values
+- [ ] `docker-compose.yml` starts SurrealDB successfully with `docker compose up -d`
+- [ ] `pip install -e ".[dev]"` completes without errors
+- [ ] `pytest` runs and exits 0 (no tests collected is acceptable)
+- [ ] `reports/` directory exists with `.gitkeep`, and is gitignored
+- [ ] No secrets or real API keys are committed
+
 ### Step 2: eToro API Client - Authentication
 - Implement `etoro/client.py`: base HTTP client with auth headers
 - Implement `config.py`: load API keys from `.env`
@@ -416,17 +426,40 @@ Each step is designed to be independently testable before moving on. We start wi
 - Write tests: verify error handling for 401/403 responses
 - **Manual verification**: make a single authenticated request to eToro API and confirm 200 response
 
+**Acceptance Criteria:**
+- [ ] `EToroClient` class sends `x-api-key`, `x-user-key`, and a unique `x-request-id` UUID on every request
+- [ ] Config loads all eToro/SurrealDB/LLM settings from `.env` via `pydantic-settings`
+- [ ] Client retries failed requests up to 3 times with exponential backoff
+- [ ] 401 and 403 responses raise clear, descriptive exceptions
+- [ ] All tests pass with `pytest` - no real API calls in tests
+- [ ] Manual test confirms a 200 response from at least one eToro endpoint
+
 ### Step 3: eToro API Client - Market Data
 - Implement `etoro/market_data.py`: instrument search, OHLCV fetch, price fetch
 - Implement `etoro/models.py`: Pydantic models for API responses
 - Write tests with mocked HTTP responses for each endpoint
 - **Manual verification**: fetch real OHLCV data for 2-3 instruments, inspect output
 
+**Acceptance Criteria:**
+- [ ] `search_instruments(query)` returns a list of instruments with `etoro_id`, `symbol`, `name`, `asset_class`
+- [ ] `get_candles(instrument_id, timeframe)` returns OHLCV data parsed into Pydantic models
+- [ ] `get_prices(instrument_ids)` returns current bid/ask for each instrument
+- [ ] All API responses are validated through Pydantic models (invalid data raises, not silently ignored)
+- [ ] Each endpoint has at least one test with mocked HTTP responses
+- [ ] Manual test fetches real candle data for a stock, a crypto, and an ETF
+
 ### Step 4: eToro API Client - Portfolio
 - Implement `etoro/portfolio.py`: portfolio positions, trading history
 - Add Pydantic models for portfolio responses
 - Write tests with mocked portfolio data
 - **Manual verification**: fetch real portfolio state, confirm positions match eToro UI
+
+**Acceptance Criteria:**
+- [ ] `get_portfolio()` returns current positions with instrument, amount, P&L, open date
+- [ ] `get_trading_history()` returns closed trades with entry/exit prices and P&L
+- [ ] Portfolio and history responses are validated through Pydantic models
+- [ ] Each endpoint has at least one test with mocked HTTP responses
+- [ ] Manual test confirms position count and instruments match what is shown in the eToro UI
 
 ### Step 5: SurrealDB Connection & Schema
 - Implement `db/connection.py`: connect to SurrealDB, handle lifecycle
@@ -435,6 +468,14 @@ Each step is designed to be independently testable before moving on. We start wi
 - Write tests: schema applies cleanly, tables exist, indexes are created
 - **Manual verification**: `docker compose up -d`, run init script, query tables via SurrealDB CLI
 
+**Acceptance Criteria:**
+- [ ] `get_connection()` connects to SurrealDB using env vars and selects the correct namespace/database
+- [ ] `apply_schema()` executes all SurrealQL from section 3 without errors
+- [ ] `python scripts/init_db.py` applies schema to a running SurrealDB instance
+- [ ] Running `init_db.py` twice is idempotent (no errors on re-apply)
+- [ ] Tests verify all 8 tables exist (`instrument`, `candle`, `portfolio_snapshot`, `analysis`, `report`, `recommendation`, `run_log`, `config`)
+- [ ] Tests verify indexes are created (`idx_symbol`, `idx_etoro_id`, `idx_candle_lookup`, `idx_run_id`, `idx_config_key`)
+
 ### Step 6: SurrealDB Data Layer
 - Implement `db/instruments.py`: upsert and query instruments
 - Implement `db/candles.py`: store and query OHLCV candles
@@ -442,17 +483,40 @@ Each step is designed to be independently testable before moving on. We start wi
 - Implement `db/reports.py`: store and query reports
 - Write tests for each module (insert, query, upsert, edge cases)
 
+**Acceptance Criteria:**
+- [ ] `instruments.py`: upsert by symbol (insert or update), query by symbol, query by etoro_id, list all
+- [ ] `candles.py`: bulk insert candles, query by instrument + timeframe + date range, no duplicate insertion
+- [ ] `snapshots.py`: create snapshot, query latest, query by date range
+- [ ] `reports.py`: create report with recommendations, query by run_id, query latest, list by date range
+- [ ] Each module has tests covering insert, query, upsert, and edge cases (empty results, duplicates)
+- [ ] All tests pass against a real SurrealDB test instance (not mocked)
+
 ### Step 7: End-to-End Data Pipeline
 - Implement `orchestrator.py` (steps 1-3 of the run pipeline only)
 - Wire up: fetch instruments from eToro -> store in SurrealDB -> fetch candles -> store -> fetch portfolio -> snapshot
 - Write integration test: mock eToro API, verify data flows through to SurrealDB
 - **Manual verification**: run pipeline, query SurrealDB to confirm data is stored correctly
 
+**Acceptance Criteria:**
+- [ ] `Orchestrator.run_data_pipeline()` executes steps 1-3 of the run pipeline (init, fetch market data, fetch portfolio)
+- [ ] Instruments are resolved via eToro API and stored/updated in SurrealDB
+- [ ] OHLCV candles are fetched for all tracked instruments and stored in SurrealDB
+- [ ] Portfolio is fetched and a snapshot is saved to SurrealDB
+- [ ] Integration test with mocked eToro API confirms data flows end-to-end
+- [ ] A failed instrument fetch does not abort the entire pipeline
+
 ### Step 8: Analysis Engine
 - Implement `analysis/price_action.py`: trend detection (higher highs/lows, moving average direction), momentum (rate of change), key price levels
 - Implement `analysis/sector.py`: group instruments by sector/asset class, compare relative performance
 - Write tests with known price data and expected analysis results
 - **Manual verification**: analyse a few instruments, manually verify trend assessments make sense
+
+**Acceptance Criteria:**
+- [ ] `analyse_price_action(candles)` returns trend direction (bullish/bearish/neutral), trend strength (0-1), key support/resistance levels, and momentum assessment
+- [ ] `analyse_sector(instruments, candles)` groups instruments by asset class/sector and compares relative performance
+- [ ] Analysis functions are pure (take data in, return results) with no API or DB calls
+- [ ] Tests use fixed candle data with known trends and verify correct classification
+- [ ] Manual test on 3+ real instruments produces sensible assessments
 
 ### Step 9: LLM Commentary
 - Implement `reporting/llm.py`: send structured analysis data to LLM, receive natural language commentary
@@ -461,12 +525,28 @@ Each step is designed to be independently testable before moving on. We start wi
 - Write tests with mocked LLM responses
 - **Manual verification**: generate commentary for real portfolio data, assess quality
 
+**Acceptance Criteria:**
+- [ ] `generate_commentary(portfolio, analyses)` sends data to the configured LLM and returns structured output
+- [ ] LLM response is parsed into: summary headline, per-position commentary, recommended actions (with action type and conviction), and market context
+- [ ] Each recommendation includes an action (`buy`/`sell`/`hold`/`reduce`/`increase`), conviction (`high`/`medium`/`low`), and reasoning
+- [ ] Supports both OpenAI and Anthropic via the `LLM_PROVIDER` config setting
+- [ ] Tests use mocked LLM responses and verify parsing logic
+- [ ] Manual test produces coherent, relevant commentary for the current portfolio
+
 ### Step 10: Report Generation & Output
 - Implement `reporting/generator.py`: assemble all data into a report structure
 - Implement `reporting/formatter.py`: render as terminal output (rich) and markdown file
 - Wire up full pipeline in `orchestrator.py` (all 6 steps)
 - Write tests for report assembly and markdown formatting
 - **Manual verification**: run full pipeline, review terminal output and saved markdown file
+
+**Acceptance Criteria:**
+- [ ] `generate_report()` assembles portfolio snapshot, analyses, and LLM commentary into a `Report` object
+- [ ] Report is printed to terminal with readable formatting via `rich`
+- [ ] Report is saved as a timestamped markdown file in `reports/` (e.g. `2026-02-09_market_open.md`)
+- [ ] Report and recommendations are stored in SurrealDB
+- [ ] Full pipeline runs end-to-end: data fetch -> analysis -> LLM -> report output
+- [ ] Tests verify report assembly and markdown output structure
 
 ### Step 11: CLI & Run Logging
 - Implement `main.py`: CLI with `--run-type` argument (market_open / market_close)
@@ -475,12 +555,28 @@ Each step is designed to be independently testable before moving on. We start wi
 - Write tests for CLI argument parsing and run log lifecycle
 - **Manual verification**: `python -m agent.main --run-type market_open` produces a complete report
 
+**Acceptance Criteria:**
+- [ ] `python -m agent.main --run-type market_open` runs the full pipeline and outputs a report
+- [ ] `--run-type` accepts `market_open` and `market_close`; rejects invalid values
+- [ ] Each run creates a `run_log` entry with: run_id, run_type, status, instruments_analysed, recommendations_made, duration_ms, errors
+- [ ] Run log status transitions: `started` -> `completed` (or `failed` on error)
+- [ ] `structlog` is configured and all components emit structured log entries
+- [ ] Tests verify CLI argument parsing, run_log creation, and status transitions
+
 ### Step 12: Polish & Hardening
 - Error handling: graceful degradation if eToro API is down or rate-limited
 - Partial runs: if one instrument fails, continue with the rest and note the error
 - Configuration: tracked instruments and LLM settings stored in SurrealDB `config` table
 - Historical backfill: `scripts/backfill_candles.py` for seeding historical data
 - Review and harden all tests
+
+**Acceptance Criteria:**
+- [ ] Agent exits gracefully (non-zero exit code, clear error message) if eToro API is unreachable
+- [ ] If N instruments are tracked and 1 fails, the report covers the remaining N-1 and the run_log records the error
+- [ ] `config` table stores tracked instrument list and LLM prompt settings; agent reads from it on startup
+- [ ] `python scripts/backfill_candles.py` fetches and stores historical daily candles for all tracked instruments
+- [ ] All existing tests still pass
+- [ ] No unhandled exceptions in any error scenario (API down, DB down, LLM down, invalid data)
 
 ### Future Phases (Post-MVP)
 
@@ -586,7 +682,30 @@ ECS Fargate Task (runs agent container)
 
 ---
 
-## 10. Open Questions
+## 10. Work Tracker
+
+Each row maps to a discrete PR. Complete and merge each PR before starting the next. Update this table as work progresses.
+
+| PR | Title | Roadmap Steps | Key Deliverables | Status |
+|---|---|---|---|---|
+| #1 | Project scaffolding | Step 1 | `pyproject.toml`, directory structure, `.env.example`, `docker-compose.yml`, pytest config | Done |
+| #2 | eToro API client - auth | Step 2 | `etoro/client.py`, `config.py`, auth header tests, error handling tests | Not Started |
+| #3 | eToro API client - market data | Step 3 | `etoro/market_data.py`, `etoro/models.py`, mocked endpoint tests | Not Started |
+| #4 | eToro API client - portfolio | Step 4 | `etoro/portfolio.py`, portfolio response models, mocked tests | Not Started |
+| #5 | SurrealDB connection & schema | Step 5 | `db/connection.py`, `db/schema.py`, `scripts/init_db.py`, schema tests | Not Started |
+| #6 | SurrealDB data layer | Step 6 | `db/instruments.py`, `db/candles.py`, `db/snapshots.py`, `db/reports.py`, CRUD tests | Not Started |
+| #7 | End-to-end data pipeline | Step 7 | `orchestrator.py` (data fetch + store), integration test with mocked API | Not Started |
+| #8 | Analysis engine | Step 8 | `analysis/price_action.py`, `analysis/sector.py`, analysis tests | Not Started |
+| #9 | LLM commentary | Step 9 | `reporting/llm.py`, prompt design, structured output parsing, mocked tests | Not Started |
+| #10 | Report generation & output | Step 10 | `reporting/generator.py`, `reporting/formatter.py`, full pipeline wiring, report tests | Not Started |
+| #11 | CLI & run logging | Step 11 | `main.py` CLI, `run_log` lifecycle, structured logging, CLI tests | Not Started |
+| #12 | Polish & hardening | Step 12 | Error handling, partial runs, config table, `backfill_candles.py`, test review | Not Started |
+
+**Status values:** `Not Started` | `In Progress` | `In Review` | `Done`
+
+---
+
+## 11. Open Questions
 
 | Question | Current Assumption |
 |---|---|
