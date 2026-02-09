@@ -82,13 +82,13 @@ def search_instruments(
 
             if query_lower in symbol or query_lower in name:
                 matches.append(Instrument.model_validate(item))
-        except ValidationError as e:
+        except ValidationError as exc:
             logger.warning(
                 "instrument_validation_failed",
-                query=query,
                 instrument_id=item.get("instrumentID"),
                 symbol=item.get("symbolFull"),
-                error=str(e),
+                name=item.get("instrumentDisplayName"),
+                error=str(exc),
             )
             continue
 
@@ -122,13 +122,13 @@ def get_instrument_by_symbol(client: EToroClient, symbol: str) -> Instrument:
             # We peek at the raw dict first to avoid validating everything
             if item.get("symbolFull", "").upper() == symbol_upper:
                 return Instrument.model_validate(item)
-        except ValidationError as e:
+        except ValidationError as exc:
             logger.warning(
-                "instrument_validation_failed_on_lookup",
-                requested_symbol=symbol,
+                "instrument_validation_failed",
                 instrument_id=item.get("instrumentID"),
-                symbol_full=item.get("symbolFull"),
-                error=str(e),
+                symbol=item.get("symbolFull"),
+                name=item.get("instrumentDisplayName"),
+                error=str(exc),
             )
             continue
 

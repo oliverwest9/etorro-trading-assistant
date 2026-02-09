@@ -126,6 +126,30 @@ def test_get_instrument_by_symbol_raises_on_no_match(httpx_mock):
     assert "UNKNOWN" in str(excinfo.value)
 
 
+def test_get_instrument_by_symbol_logs_validation_errors(httpx_mock, capsys):
+    """get_instrument_by_symbol logs validation errors for malformed data."""
+    httpx_mock.add_response(
+        url="https://example.com/market-data/instruments",
+        json={
+            "instrumentDisplayDatas": [
+                {
+                    "symbolFull": "BADDATA",
+                    # Missing required fields
+                    "someUnknownField": "value",
+                }
+            ],
+        },
+    )
+
+    with EToroClient(_settings()) as client:
+        with pytest.raises(InstrumentNotFoundError):
+            get_instrument_by_symbol(client, "BADDATA")
+
+    # Verify that the validation failure was logged to stdout
+    captured = capsys.readouterr()
+    assert "instrument_validation_failed" in captured.out
+
+
 # =============================================================================
 # Candle Tests
 # =============================================================================
@@ -409,13 +433,14 @@ def test_get_prices_handles_empty_list():
 # =============================================================================
 
 
-def test_invalid_instrument_response_returns_empty_list(httpx_mock):
-    """Malformed instrument data results in an empty list (no ValidationError)."""
+def test_invalid_instrument_response_raises_validation_error(httpx_mock, capsys):
+    """Pydantic rejects malformed instrument data and logs the failure."""
     httpx_mock.add_response(
         url="https://example.com/market-data/instruments",
         json={
             "instrumentDisplayDatas": [
                 {
+                    "symbolFull": "BADDATA",
                     # Missing required fields like instrumentId, displayname, etc.
                     "someUnknownField": "value",
                 }
@@ -424,8 +449,12 @@ def test_invalid_instrument_response_returns_empty_list(httpx_mock):
     )
 
     with EToroClient(_settings()) as client:
-        instruments = search_instruments(client, "BAD")
+        instruments = search_instruments(client, "BADDATA")
         assert instruments == []
+
+    # Verify that the validation failure was logged to stdout
+    captured = capsys.readouterr()
+    assert "instrument_validation_failed" in captured.out
 
 
 def test_invalid_candle_response_raises_validation_error(httpx_mock):
