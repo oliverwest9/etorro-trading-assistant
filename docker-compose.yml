@@ -1,0 +1,11 @@
+services:
+  surrealdb:
+    image: surrealdb/surrealdb:latest
+    command: start --user root --pass root file:/data/trading.db
+    ports:
+      - "8000:8000"
+    volumes:
+      - surrealdb_data:/data
+
+volumes:
+  surrealdb_data:
