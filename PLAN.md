@@ -388,10 +388,12 @@ Each report includes:
 
 ### Run Schedule
 
-| Run | Time (GMT) | Purpose |
+| Run | Time (Europe/London) | Purpose |
 |---|---|---|
 | `market_open` | 08:00 | Morning briefing: overnight moves, day ahead outlook |
 | `market_close` | 16:30 | End-of-day review: session performance, overnight considerations |
+
+**Note:** Times are in Europe/London timezone, which observes daylight saving time (GMT in winter, BST in summer). Schedule the agent accordingly to align with actual UK market hours.
 
 Orchestration is external to the agent - use Windows Task Scheduler locally, AWS EventBridge + Lambda/ECS in future.
 
