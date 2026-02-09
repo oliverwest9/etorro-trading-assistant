@@ -37,6 +37,10 @@ class InstrumentNotFoundError(Exception):
     """Raised when an instrument cannot be found by symbol."""
 
 
+class InvalidCandleCountError(ValueError):
+    """Raised when the candle count parameter is out of valid range."""
+
+
 def search_instruments(
     client: EToroClient,
     query: str,
@@ -128,14 +132,20 @@ def get_candles(
         client: The eToro API client.
         instrument_id: The eToro instrument ID.
         interval: Candle interval (default 'OneDay').
-        count: Number of candles to fetch, max 1000 (default 100).
+        count: Number of candles to fetch, must be between 1 and 1000 (default 100).
         direction: Sort direction, 'asc' or 'desc' (default 'desc').
 
     Returns:
         A list of Candle objects with OHLCV data.
+
+    Raises:
+        InvalidCandleCountError: If count is not between 1 and 1000.
     """
-    # Clamp count to API maximum
-    count = min(count, 1000)
+    # Validate count is within valid range
+    if count < 1 or count > 1000:
+        raise InvalidCandleCountError(
+            f"count must be between 1 and 1000, got {count}"
+        )
 
     response = client.get(
         f"/market-data/instruments/{instrument_id}/history/candles/{direction}/{interval}/{count}"
