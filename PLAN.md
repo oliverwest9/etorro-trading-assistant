@@ -691,7 +691,7 @@ Each row maps to a discrete PR. Complete and merge each PR before starting the n
 | PR | Title | Roadmap Steps | Key Deliverables | Status |
 |---|---|---|---|---|
 | #1 | Project scaffolding | Step 1 | `pyproject.toml`, directory structure, `.env.example`, `docker-compose.yml`, pytest config | Done |
-| #2 | eToro API client - auth | Step 2 | `etoro/client.py`, `config.py`, auth header tests, error handling tests | Not Started |
+| #2 | eToro API client - auth | Step 2 | `etoro/client.py`, `config.py`, auth header tests, error handling tests | In Review |
 | #3 | eToro API client - market data | Step 3 | `etoro/market_data.py`, `etoro/models.py`, mocked endpoint tests | Not Started |
 | #4 | eToro API client - portfolio | Step 4 | `etoro/portfolio.py`, portfolio response models, mocked tests | Not Started |
 | #5 | SurrealDB connection & schema | Step 5 | `db/connection.py`, `db/schema.py`, `scripts/init_db.py`, schema tests | Not Started |
