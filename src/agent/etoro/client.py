@@ -72,8 +72,8 @@ class EToroClient:
         use_cache: bool = True,
     ) -> httpx.Response:
         # Check cache for instruments endpoint
+        cache_key = path
         if use_cache and path == "/market-data/instruments" and not params:
-            cache_key = path
             cached = self._cache.get(cache_key)
             if cached and not cached.is_expired():
                 return cached.response
@@ -82,7 +82,6 @@ class EToroClient:
 
         # Cache instruments endpoint response
         if use_cache and path == "/market-data/instruments" and not params:
-            cache_key = path
             self._cache[cache_key] = _CacheEntry(response, self._cache_ttl)
 
         return response

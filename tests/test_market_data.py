@@ -431,32 +431,25 @@ def test_get_instrument_by_symbol_uses_cache_on_repeated_calls(httpx_mock):
 
 def test_cache_respects_ttl(httpx_mock):
     """Verify cache expires after TTL."""
+    mock_response = {
+        "instrumentDisplayDatas": [
+            {
+                "instrumentID": 1001,
+                "symbolFull": "AAPL",
+                "instrumentDisplayName": "Apple Inc",
+                "instrumentTypeID": 5,
+            }
+        ]
+    }
+    
     # Register response twice since cache will expire and request again
     httpx_mock.add_response(
         url="https://example.com/market-data/instruments",
-        json={
-            "instrumentDisplayDatas": [
-                {
-                    "instrumentID": 1001,
-                    "symbolFull": "AAPL",
-                    "instrumentDisplayName": "Apple Inc",
-                    "instrumentTypeID": 5,
-                }
-            ]
-        },
+        json=mock_response,
     )
     httpx_mock.add_response(
         url="https://example.com/market-data/instruments",
-        json={
-            "instrumentDisplayDatas": [
-                {
-                    "instrumentID": 1001,
-                    "symbolFull": "AAPL",
-                    "instrumentDisplayName": "Apple Inc",
-                    "instrumentTypeID": 5,
-                }
-            ]
-        },
+        json=mock_response,
     )
 
     # Use a very short TTL
@@ -478,32 +471,25 @@ def test_cache_respects_ttl(httpx_mock):
 
 def test_clear_cache_forces_new_request(httpx_mock):
     """Verify clear_cache() forces a new API request."""
+    mock_response = {
+        "instrumentDisplayDatas": [
+            {
+                "instrumentID": 1001,
+                "symbolFull": "AAPL",
+                "instrumentDisplayName": "Apple Inc",
+                "instrumentTypeID": 5,
+            }
+        ]
+    }
+    
     # Register response twice since we'll call it twice
     httpx_mock.add_response(
         url="https://example.com/market-data/instruments",
-        json={
-            "instrumentDisplayDatas": [
-                {
-                    "instrumentID": 1001,
-                    "symbolFull": "AAPL",
-                    "instrumentDisplayName": "Apple Inc",
-                    "instrumentTypeID": 5,
-                }
-            ]
-        },
+        json=mock_response,
     )
     httpx_mock.add_response(
         url="https://example.com/market-data/instruments",
-        json={
-            "instrumentDisplayDatas": [
-                {
-                    "instrumentID": 1001,
-                    "symbolFull": "AAPL",
-                    "instrumentDisplayName": "Apple Inc",
-                    "instrumentTypeID": 5,
-                }
-            ]
-        },
+        json=mock_response,
     )
 
     with EToroClient(_settings()) as client:
