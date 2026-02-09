@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Literal
 
+import structlog
 from pydantic import ValidationError
 
 from agent.etoro.client import EToroClient
@@ -15,6 +16,8 @@ from agent.etoro.models import (
     Rate,
     RatesResponse,
 )
+
+logger = structlog.get_logger(__name__)
 
 
 # Valid candle intervals as defined by the eToro API
@@ -75,7 +78,14 @@ def search_instruments(
 
             if query_lower in symbol or query_lower in name:
                 matches.append(Instrument.model_validate(item))
-        except ValidationError:
+        except ValidationError as e:
+            logger.warning(
+                "instrument_validation_failed",
+                query=query,
+                instrument_id=item.get("instrumentID"),
+                symbol=item.get("symbolFull"),
+                error=str(e),
+            )
             continue
 
     # Simulate pagination
@@ -108,7 +118,14 @@ def get_instrument_by_symbol(client: EToroClient, symbol: str) -> Instrument:
             # We peek at the raw dict first to avoid validating everything
             if item.get("symbolFull", "").upper() == symbol_upper:
                 return Instrument.model_validate(item)
-        except ValidationError:
+        except ValidationError as e:
+            logger.warning(
+                "instrument_validation_failed_on_lookup",
+                requested_symbol=symbol,
+                instrument_id=item.get("instrumentID"),
+                symbol_full=item.get("symbolFull"),
+                error=str(e),
+            )
             continue
 
     raise InstrumentNotFoundError(f"No instrument found with symbol '{symbol}'")
