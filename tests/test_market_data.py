@@ -306,8 +306,8 @@ def test_get_prices_handles_empty_list():
 # =============================================================================
 
 
-def test_invalid_instrument_response_raises_validation_error(httpx_mock):
-    """Pydantic rejects malformed instrument data."""
+def test_invalid_instrument_response_returns_empty_list(httpx_mock):
+    """Malformed instrument data results in an empty list (no ValidationError)."""
     httpx_mock.add_response(
         url="https://example.com/market-data/instruments",
         json={
