@@ -80,6 +80,42 @@ def test_search_instruments_handles_empty_results(httpx_mock):
     assert instruments == []
 
 
+def test_search_instruments_validates_page_size(httpx_mock):
+    """page_size < 1 raises ValueError."""
+    with EToroClient(_settings()) as client:
+        with pytest.raises(ValueError) as excinfo:
+            search_instruments(client, "AAPL", page_size=0)
+    
+    assert "page_size must be >= 1" in str(excinfo.value)
+
+
+def test_search_instruments_validates_page_number(httpx_mock):
+    """page_number < 1 raises ValueError."""
+    with EToroClient(_settings()) as client:
+        with pytest.raises(ValueError) as excinfo:
+            search_instruments(client, "AAPL", page_number=0)
+    
+    assert "page_number must be >= 1" in str(excinfo.value)
+
+
+def test_search_instruments_rejects_negative_page_size(httpx_mock):
+    """Negative page_size raises ValueError."""
+    with EToroClient(_settings()) as client:
+        with pytest.raises(ValueError) as excinfo:
+            search_instruments(client, "AAPL", page_size=-5)
+    
+    assert "page_size must be >= 1" in str(excinfo.value)
+
+
+def test_search_instruments_rejects_negative_page_number(httpx_mock):
+    """Negative page_number raises ValueError."""
+    with EToroClient(_settings()) as client:
+        with pytest.raises(ValueError) as excinfo:
+            search_instruments(client, "AAPL", page_number=-3)
+    
+    assert "page_number must be >= 1" in str(excinfo.value)
+
+
 def test_get_instrument_by_symbol_finds_exact_match(httpx_mock):
     """get_instrument_by_symbol returns the instrument with exact symbol match."""
     httpx_mock.add_response(
