@@ -58,7 +58,16 @@ def search_instruments(
 
     Returns:
         A list of matching Instrument objects.
+
+    Raises:
+        ValueError: If page_size or page_number is less than 1.
     """
+    # Validate pagination parameters
+    if page_size < 1:
+        raise ValueError(f"page_size must be >= 1, got {page_size}")
+    if page_number < 1:
+        raise ValueError(f"page_number must be >= 1, got {page_number}")
+
     # Fetch all instruments
     response = client.get("/market-data/instruments")
     parsed = InstrumentSearchResponse.model_validate(response.json())
