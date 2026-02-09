@@ -23,8 +23,8 @@ class Instrument(BaseModel):
     exchange_id: Optional[int] = Field(default=None, alias="exchangeID")
 
     # These fields are not in the list response, so we make them optional/computed
-    is_open: bool = Field(default=True)
-    is_tradable: bool = Field(default=True)
+    is_open: Optional[bool] = Field(default=None)
+    is_tradable: Optional[bool] = Field(default=None)
 
     @property
     def asset_class(self) -> str:
