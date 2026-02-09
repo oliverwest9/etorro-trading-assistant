@@ -1,0 +1,14 @@
+services:
+  surrealdb:
+    image: surrealdb/surrealdb:1.4.0
+    command: start --user ${SURREALDB_USER} --pass ${SURREALDB_PASS} file:/data/trading.db
+    environment:
+      - SURREALDB_USER=trading_app
+      - SURREALDB_PASS=change-this-password
+    ports:
+      - "127.0.0.1:8000:8000"
+    volumes:
+      - surrealdb_data:/data
+
+volumes:
+  surrealdb_data:
