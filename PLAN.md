@@ -702,6 +702,7 @@ Each row maps to a discrete PR. Complete and merge each PR before starting the n
 | #10 | Report generation & output | Step 10 | `reporting/generator.py`, `reporting/formatter.py`, full pipeline wiring, report tests | Not Started |
 | #11 | CLI & run logging | Step 11 | `main.py` CLI, `run_log` lifecycle, structured logging, CLI tests | Not Started |
 | #12 | Polish & hardening | Step 12 | Error handling, partial runs, config table, `backfill_candles.py`, test review | Not Started |
+| #13 | CI workflow for pytest | N/A | `.github/workflows/pytest.yml` | In Review |
 
 **Status values:** `Not Started` | `In Progress` | `In Review` | `Done`
 
