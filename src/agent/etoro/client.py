@@ -63,6 +63,12 @@ class EToroClient:
         """Clear all cached responses."""
         self._cache.clear()
 
+    def _should_cache_instruments(
+        self, path: str, params: Mapping[str, Any] | None
+    ) -> bool:
+        """Check if this request should use instruments cache."""
+        return path == "/market-data/instruments" and not params
+
     def get(
         self,
         path: str,
@@ -73,7 +79,7 @@ class EToroClient:
     ) -> httpx.Response:
         # Check cache for instruments endpoint
         cache_key = path
-        if use_cache and path == "/market-data/instruments" and not params:
+        if use_cache and self._should_cache_instruments(path, params):
             cached = self._cache.get(cache_key)
             if cached and not cached.is_expired():
                 return cached.response
@@ -81,7 +87,7 @@ class EToroClient:
         response = self.request("GET", path, params=params, timeout=timeout)
 
         # Cache instruments endpoint response
-        if use_cache and path == "/market-data/instruments" and not params:
+        if use_cache and self._should_cache_instruments(path, params):
             self._cache[cache_key] = _CacheEntry(response, self._cache_ttl)
 
         return response
