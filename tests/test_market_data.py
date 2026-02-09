@@ -1,0 +1,596 @@
+"""Tests for the eToro market data module."""
+
+import pytest
+import structlog
+from pydantic import ValidationError
+
+from agent.config import Settings
+from agent.etoro.client import EToroClient
+from agent.etoro.market_data import (
+    InstrumentNotFoundError,
+    InvalidCandleCountError,
+    get_candles,
+    get_instrument_by_symbol,
+    get_prices,
+    search_instruments,
+)
+
+
+def _settings() -> Settings:
+    return Settings(
+        etoro_api_key="test-api-key",
+        etoro_user_key="test-user-key",
+        etoro_base_url="https://example.com",
+        surreal_url="ws://localhost:8000/rpc",
+        surreal_namespace="trading",
+        surreal_database="agent",
+        surreal_user="root",
+        surreal_pass="root",
+        llm_provider="openai",
+        llm_api_key="test-llm",
+        llm_model="gpt-4o",
+    )
+
+
+# =============================================================================
+# Instrument Search Tests
+# =============================================================================
+
+
+def test_search_instruments_returns_parsed_results(httpx_mock):
+    """Verify search_instruments parses the API response correctly."""
+    httpx_mock.add_response(
+        url="https://example.com/market-data/instruments",
+        json={
+            "instrumentDisplayDatas": [
+                {
+                    "instrumentID": 1001,
+                    "symbolFull": "AAPL",
+                    "instrumentDisplayName": "Apple Inc",
+                    "instrumentTypeID": 5,
+                    "exchangeID": 10,
+                }
+            ]
+        },
+    )
+
+    with EToroClient(_settings()) as client:
+        instruments = search_instruments(client, "AAPL")
+
+    assert len(instruments) == 1
+    assert instruments[0].instrument_id == 1001
+    assert instruments[0].symbol == "AAPL"
+    assert instruments[0].name == "Apple Inc"
+    assert instruments[0].asset_class == "Stocks"
+    assert instruments[0].exchange_id == 10
+
+
+def test_search_instruments_handles_empty_results(httpx_mock):
+    """Empty search returns an empty list."""
+    httpx_mock.add_response(
+        url="https://example.com/market-data/instruments",
+        json={
+            "instrumentDisplayDatas": []
+        },
+    )
+
+    with EToroClient(_settings()) as client:
+        instruments = search_instruments(client, "NONEXISTENT")
+
+    assert instruments == []
+
+
+def test_search_instruments_validates_page_size(httpx_mock):
+    """page_size < 1 raises ValueError."""
+    with EToroClient(_settings()) as client:
+        with pytest.raises(ValueError) as excinfo:
+            search_instruments(client, "AAPL", page_size=0)
+    
+    assert "page_size must be >= 1" in str(excinfo.value)
+
+
+def test_search_instruments_validates_page_number(httpx_mock):
+    """page_number < 1 raises ValueError."""
+    with EToroClient(_settings()) as client:
+        with pytest.raises(ValueError) as excinfo:
+            search_instruments(client, "AAPL", page_number=0)
+    
+    assert "page_number must be >= 1" in str(excinfo.value)
+
+
+def test_search_instruments_rejects_negative_page_size(httpx_mock):
+    """Negative page_size raises ValueError."""
+    with EToroClient(_settings()) as client:
+        with pytest.raises(ValueError) as excinfo:
+            search_instruments(client, "AAPL", page_size=-5)
+    
+    assert "page_size must be >= 1" in str(excinfo.value)
+
+
+def test_search_instruments_rejects_negative_page_number(httpx_mock):
+    """Negative page_number raises ValueError."""
+    with EToroClient(_settings()) as client:
+        with pytest.raises(ValueError) as excinfo:
+            search_instruments(client, "AAPL", page_number=-3)
+    
+    assert "page_number must be >= 1" in str(excinfo.value)
+
+
+def test_get_instrument_by_symbol_finds_exact_match(httpx_mock):
+    """get_instrument_by_symbol returns the instrument with exact symbol match."""
+    httpx_mock.add_response(
+        url="https://example.com/market-data/instruments",
+        json={
+            "instrumentDisplayDatas": [
+                {
+                    "instrumentID": 100001,
+                    "symbolFull": "BTC",
+                    "instrumentDisplayName": "Bitcoin",
+                    "instrumentTypeID": 10,
+                },
+                {
+                    "instrumentID": 100002,
+                    "symbolFull": "BTC-ETH",
+                    "instrumentDisplayName": "BTC/ETH Pair",
+                    "instrumentTypeID": 10,
+                },
+            ],
+        },
+    )
+
+    with EToroClient(_settings()) as client:
+        instrument = get_instrument_by_symbol(client, "BTC")
+
+    assert instrument.instrument_id == 100001
+    assert instrument.symbol == "BTC"
+    assert instrument.name == "Bitcoin"
+
+
+def test_get_instrument_by_symbol_raises_on_no_match(httpx_mock):
+    """get_instrument_by_symbol raises InstrumentNotFoundError when no exact match."""
+    httpx_mock.add_response(
+        url="https://example.com/market-data/instruments",
+        json={
+            "instrumentDisplayDatas": [],
+        },
+    )
+
+    with EToroClient(_settings()) as client:
+        with pytest.raises(InstrumentNotFoundError) as excinfo:
+            get_instrument_by_symbol(client, "UNKNOWN")
+
+    assert "UNKNOWN" in str(excinfo.value)
+
+
+def test_get_instrument_by_symbol_logs_validation_errors(httpx_mock, capsys):
+    """get_instrument_by_symbol logs validation errors for malformed data."""
+    httpx_mock.add_response(
+        url="https://example.com/market-data/instruments",
+        json={
+            "instrumentDisplayDatas": [
+                {
+                    "symbolFull": "BADDATA",
+                    # Missing required fields
+                    "someUnknownField": "value",
+                }
+            ],
+        },
+    )
+
+    with EToroClient(_settings()) as client:
+        with pytest.raises(InstrumentNotFoundError):
+            get_instrument_by_symbol(client, "BADDATA")
+
+    # Verify that the validation failure was logged to stdout
+    captured = capsys.readouterr()
+    assert "instrument_validation_failed" in captured.out
+
+
+# =============================================================================
+# Candle Tests
+# =============================================================================
+
+
+def test_get_candles_parses_ohlcv_data(httpx_mock):
+    """Verify get_candles parses OHLCV data correctly."""
+    httpx_mock.add_response(
+        url="https://example.com/market-data/instruments/1001/history/candles/desc/OneDay/10",
+        json={
+            "interval": "OneDay",
+            "candles": [
+                {
+                    "instrumentId": 1001,
+                    "candles": [
+                        {
+                            "instrumentID": 1001,
+                            "fromDate": "2025-03-07T00:00:00Z",
+                            "open": 175.50,
+                            "high": 178.25,
+                            "low": 174.00,
+                            "close": 177.80,
+                            "volume": 1234567.0,
+                        },
+                        {
+                            "instrumentID": 1001,
+                            "fromDate": "2025-03-06T00:00:00Z",
+                            "open": 173.00,
+                            "high": 176.50,
+                            "low": 172.50,
+                            "close": 175.50,
+                            "volume": 987654.0,
+                        },
+                    ],
+                    "rangeOpen": 173.00,
+                    "rangeClose": 177.80,
+                    "rangeHigh": 178.25,
+                    "rangeLow": 172.50,
+                    "volume": 2222221.0,
+                }
+            ],
+        },
+    )
+
+    with EToroClient(_settings()) as client:
+        candles = get_candles(client, 1001, interval="OneDay", count=10)
+
+    assert len(candles) == 2
+    assert candles[0].instrument_id == 1001
+    assert candles[0].open == 175.50
+    assert candles[0].high == 178.25
+    assert candles[0].low == 174.00
+    assert candles[0].close == 177.80
+    assert candles[0].volume == 1234567.0
+
+
+def test_get_candles_handles_various_intervals(httpx_mock):
+    """Test that different interval values work correctly."""
+    httpx_mock.add_response(
+        url="https://example.com/market-data/instruments/1001/history/candles/asc/OneHour/50",
+        json={
+            "interval": "OneHour",
+            "candles": [
+                {
+                    "instrumentId": 1001,
+                    "candles": [
+                        {
+                            "instrumentID": 1001,
+                            "fromDate": "2025-03-07T10:00:00Z",
+                            "open": 175.50,
+                            "high": 176.00,
+                            "low": 175.25,
+                            "close": 175.75,
+                            "volume": 10000.0,
+                        }
+                    ],
+                    "rangeOpen": 175.50,
+                    "rangeClose": 175.75,
+                    "rangeHigh": 176.00,
+                    "rangeLow": 175.25,
+                    "volume": 10000.0,
+                }
+            ],
+        },
+    )
+
+    with EToroClient(_settings()) as client:
+        candles = get_candles(
+            client, 1001, interval="OneHour", count=50, direction="asc"
+        )
+
+    assert len(candles) == 1
+    assert candles[0].close == 175.75
+
+
+def test_get_candles_rejects_count_below_minimum():
+    """get_candles raises InvalidCandleCountError when count < 1."""
+    with EToroClient(_settings()) as client:
+        with pytest.raises(InvalidCandleCountError) as excinfo:
+            get_candles(client, 1001, count=0)
+
+    assert "count must be between 1 and 1000" in str(excinfo.value)
+    assert "got 0" in str(excinfo.value)
+
+
+def test_get_candles_rejects_negative_count():
+    """get_candles raises InvalidCandleCountError when count is negative."""
+    with EToroClient(_settings()) as client:
+        with pytest.raises(InvalidCandleCountError) as excinfo:
+            get_candles(client, 1001, count=-5)
+
+    assert "count must be between 1 and 1000" in str(excinfo.value)
+    assert "got -5" in str(excinfo.value)
+
+
+def test_get_candles_rejects_count_above_maximum():
+    """get_candles raises InvalidCandleCountError when count > 1000."""
+    with EToroClient(_settings()) as client:
+        with pytest.raises(InvalidCandleCountError) as excinfo:
+            get_candles(client, 1001, count=1001)
+
+    assert "count must be between 1 and 1000" in str(excinfo.value)
+    assert "got 1001" in str(excinfo.value)
+
+
+def test_get_candles_accepts_count_at_boundaries(httpx_mock):
+    """get_candles accepts count values of 1 and 1000."""
+    # Test count = 1
+    httpx_mock.add_response(
+        url="https://example.com/market-data/instruments/1001/history/candles/desc/OneDay/1",
+        json={
+            "interval": "OneDay",
+            "candles": [
+                {
+                    "instrumentId": 1001,
+                    "candles": [
+                        {
+                            "instrumentID": 1001,
+                            "fromDate": "2025-03-07T00:00:00Z",
+                            "open": 175.50,
+                            "high": 178.25,
+                            "low": 174.00,
+                            "close": 177.80,
+                            "volume": 1234567.0,
+                        }
+                    ],
+                    "rangeOpen": 175.50,
+                    "rangeClose": 177.80,
+                    "rangeHigh": 178.25,
+                    "rangeLow": 174.00,
+                    "volume": 1234567.0,
+                }
+            ],
+        },
+    )
+
+    with EToroClient(_settings()) as client:
+        candles = get_candles(client, 1001, count=1)
+
+    assert len(candles) == 1
+
+    # Test count = 1000
+    httpx_mock.add_response(
+        url="https://example.com/market-data/instruments/1001/history/candles/desc/OneDay/1000",
+        json={
+            "interval": "OneDay",
+            "candles": [
+                {
+                    "instrumentId": 1001,
+                    "candles": [
+                        {
+                            "instrumentID": 1001,
+                            "fromDate": "2025-03-07T00:00:00Z",
+                            "open": 175.50,
+                            "high": 178.25,
+                            "low": 174.00,
+                            "close": 177.80,
+                            "volume": 1234567.0,
+                        }
+                    ],
+                    "rangeOpen": 175.50,
+                    "rangeClose": 177.80,
+                    "rangeHigh": 178.25,
+                    "rangeLow": 174.00,
+                    "volume": 1234567.0,
+                }
+            ],
+        },
+    )
+
+    with EToroClient(_settings()) as client:
+        candles = get_candles(client, 1001, count=1000)
+
+    assert len(candles) == 1
+
+
+# =============================================================================
+# Rate/Price Tests
+# =============================================================================
+
+
+def test_get_prices_returns_bid_ask(httpx_mock):
+    """Verify get_prices parses bid/ask correctly."""
+    httpx_mock.add_response(
+        url="https://example.com/market-data/instruments/rates?instrumentIds=1001",
+        json={
+            "rates": [
+                {
+                    "instrumentID": 1001,
+                    "bid": 177.50,
+                    "ask": 177.55,
+                    "lastExecution": 177.52,
+                    "date": "2025-03-07T14:30:00Z",
+                    "conversionRateAsk": 1.0,
+                    "conversionRateBid": 1.0,
+                }
+            ]
+        },
+    )
+
+    with EToroClient(_settings()) as client:
+        prices = get_prices(client, [1001])
+
+    assert len(prices) == 1
+    assert prices[0].instrument_id == 1001
+    assert prices[0].bid == 177.50
+    assert prices[0].ask == 177.55
+    assert prices[0].last_execution == 177.52
+
+
+def test_get_prices_handles_multiple_instruments(httpx_mock):
+    """Multiple instrument IDs work correctly."""
+    httpx_mock.add_response(
+        url="https://example.com/market-data/instruments/rates?instrumentIds=1001,1002,1003",
+        json={
+            "rates": [
+                {
+                    "instrumentID": 1001,
+                    "bid": 177.50,
+                    "ask": 177.55,
+                    "lastExecution": 177.52,
+                    "date": "2025-03-07T14:30:00Z",
+                },
+                {
+                    "instrumentID": 1002,
+                    "bid": 85000.00,
+                    "ask": 85050.00,
+                    "lastExecution": 85025.00,
+                    "date": "2025-03-07T14:30:00Z",
+                },
+                {
+                    "instrumentID": 1003,
+                    "bid": 450.25,
+                    "ask": 450.30,
+                    "lastExecution": 450.27,
+                    "date": "2025-03-07T14:30:00Z",
+                },
+            ]
+        },
+    )
+
+    with EToroClient(_settings()) as client:
+        prices = get_prices(client, [1001, 1002, 1003])
+
+    assert len(prices) == 3
+    assert prices[0].instrument_id == 1001
+    assert prices[1].instrument_id == 1002
+    assert prices[2].instrument_id == 1003
+
+
+def test_get_prices_handles_empty_list():
+    """Empty instrument list returns empty result without API call."""
+    with EToroClient(_settings()) as client:
+        prices = get_prices(client, [])
+
+    assert prices == []
+
+
+# =============================================================================
+# Validation Tests
+# =============================================================================
+
+
+def test_invalid_instrument_response_raises_validation_error(httpx_mock, capsys):
+    """Pydantic rejects malformed instrument data and logs the failure."""
+    httpx_mock.add_response(
+        url="https://example.com/market-data/instruments",
+        json={
+            "instrumentDisplayDatas": [
+                {
+                    "symbolFull": "BADDATA",
+                    # Missing required fields like instrumentId, displayname, etc.
+                    "someUnknownField": "value",
+                }
+            ],
+        },
+    )
+
+    with EToroClient(_settings()) as client:
+        instruments = search_instruments(client, "BADDATA")
+        assert instruments == []
+
+    # Verify that the validation failure was logged to stdout
+    captured = capsys.readouterr()
+    assert "instrument_validation_failed" in captured.out
+
+
+def test_invalid_candle_response_raises_validation_error(httpx_mock):
+    """Pydantic rejects malformed candle data."""
+    httpx_mock.add_response(
+        url="https://example.com/market-data/instruments/1001/history/candles/desc/OneDay/10",
+        json={
+            "interval": "OneDay",
+            "candles": [
+                {
+                    "instrumentId": 1001,
+                    "candles": [
+                        {
+                            # Missing required OHLCV fields
+                            "fromDate": "2025-03-07T00:00:00Z",
+                        }
+                    ],
+                    "rangeOpen": 0,
+                    "rangeClose": 0,
+                    "rangeHigh": 0,
+                    "rangeLow": 0,
+                    "volume": 0,
+                }
+            ],
+        },
+    )
+
+    with EToroClient(_settings()) as client:
+        with pytest.raises(ValidationError):
+            get_candles(client, 1001, count=10)
+
+
+def test_search_instruments_logs_validation_errors(httpx_mock, capsys):
+    """Verify that malformed instruments are logged during search."""
+    httpx_mock.add_response(
+        url="https://example.com/market-data/instruments",
+        json={
+            "instrumentDisplayDatas": [
+                {
+                    "instrumentID": 1001,
+                    "symbolFull": "AAPL",
+                    "instrumentDisplayName": "Apple Inc",
+                    "instrumentTypeID": 5,
+                    "exchangeID": 10,
+                },
+                {
+                    # Malformed entry - missing required fields
+                    "instrumentID": 1002,
+                    "symbolFull": "BAD",
+                    # Missing instrumentDisplayName, instrumentTypeID
+                },
+            ]
+        },
+    )
+
+    with EToroClient(_settings()) as client:
+        instruments = search_instruments(client, "A")
+
+    # Should return only the valid instrument
+    assert len(instruments) == 1
+    assert instruments[0].symbol == "AAPL"
+
+    # Should have logged the validation error for the malformed entry
+    captured = capsys.readouterr()
+    assert "instrument_validation_failed" in captured.out
+    assert "1002" in captured.out  # instrument_id
+    assert "BAD" in captured.out  # symbol
+
+
+def test_get_instrument_by_symbol_logs_validation_errors(httpx_mock, capsys):
+    """Verify that validation errors are logged during exact symbol lookup."""
+    httpx_mock.add_response(
+        url="https://example.com/market-data/instruments",
+        json={
+            "instrumentDisplayDatas": [
+                {
+                    # Malformed entry that matches the symbol but fails validation
+                    "instrumentID": 1001,
+                    "symbolFull": "BTC",
+                    # Missing required instrumentDisplayName, instrumentTypeID
+                },
+                {
+                    "instrumentID": 1002,
+                    "symbolFull": "BTC",
+                    "instrumentDisplayName": "Bitcoin",
+                    "instrumentTypeID": 10,
+                },
+            ],
+        },
+    )
+
+    with EToroClient(_settings()) as client:
+        # Should skip the first malformed entry and return the second valid one
+        instrument = get_instrument_by_symbol(client, "BTC")
+
+    assert instrument.instrument_id == 1002
+    assert instrument.symbol == "BTC"
+
+    # Should have logged the validation error for the malformed entry
+    captured = capsys.readouterr()
+    assert "instrument_validation_failed_on_lookup" in captured.out
+    assert "1001" in captured.out  # instrument_id
+    assert "BTC" in captured.out  # symbol

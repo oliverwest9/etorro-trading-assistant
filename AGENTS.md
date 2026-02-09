@@ -105,6 +105,7 @@ Do not create new top-level directories or reorganise the structure without expl
 - Do not modify the SurrealDB schema without updating `PLAN.md` section 3 to match
 - Do not create documentation files beyond what already exists (PLAN.md, AGENTS.md)
 - Do not skip writing tests for any new functionality
+- **Do NOT edit unit tests to make them pass** - fix the implementation code instead. Tests define the expected behaviour; if a test fails, the implementation is wrong, not the test.
 
 ## Work Tracker
 

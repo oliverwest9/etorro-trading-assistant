@@ -691,17 +691,17 @@ Each row maps to a discrete PR. Complete and merge each PR before starting the n
 | PR | Title | Roadmap Steps | Key Deliverables | Status |
 |---|---|---|---|---|
 | #1 | Project scaffolding | Step 1 | `pyproject.toml`, directory structure, `.env.example`, `docker-compose.yml`, pytest config | Done |
-| #2 | eToro API client - auth | Step 2 | `etoro/client.py`, `config.py`, auth header tests, error handling tests | In Review |
-| #3 | eToro API client - market data | Step 3 | `etoro/market_data.py`, `etoro/models.py`, mocked endpoint tests | Not Started |
-| #4 | eToro API client - portfolio | Step 4 | `etoro/portfolio.py`, portfolio response models, mocked tests | Not Started |
-| #5 | SurrealDB connection & schema | Step 5 | `db/connection.py`, `db/schema.py`, `scripts/init_db.py`, schema tests | Not Started |
-| #6 | SurrealDB data layer | Step 6 | `db/instruments.py`, `db/candles.py`, `db/snapshots.py`, `db/reports.py`, CRUD tests | Not Started |
-| #7 | End-to-end data pipeline | Step 7 | `orchestrator.py` (data fetch + store), integration test with mocked API | Not Started |
-| #8 | Analysis engine | Step 8 | `analysis/price_action.py`, `analysis/sector.py`, analysis tests | Not Started |
-| #9 | LLM commentary | Step 9 | `reporting/llm.py`, prompt design, structured output parsing, mocked tests | Not Started |
-| #10 | Report generation & output | Step 10 | `reporting/generator.py`, `reporting/formatter.py`, full pipeline wiring, report tests | Not Started |
-| #11 | CLI & run logging | Step 11 | `main.py` CLI, `run_log` lifecycle, structured logging, CLI tests | Not Started |
-| #12 | Polish & hardening | Step 12 | Error handling, partial runs, config table, `backfill_candles.py`, test review | Not Started |
+| #4 | eToro API client - auth | Step 2 | `etoro/client.py`, `config.py`, auth header tests, error handling tests | Done |
+| #5 | eToro API client - market data | Step 3 | `etoro/market_data.py`, `etoro/models.py`, mocked endpoint tests | In Review |
+| TBD | eToro API client - portfolio | Step 4 | `etoro/portfolio.py`, portfolio response models, mocked tests | Not Started |
+| TBD | SurrealDB connection & schema | Step 5 | `db/connection.py`, `db/schema.py`, `scripts/init_db.py`, schema tests | Not Started |
+| TBD | SurrealDB data layer | Step 6 | `db/instruments.py`, `db/candles.py`, `db/snapshots.py`, `db/reports.py`, CRUD tests | Not Started |
+| TBD | End-to-end data pipeline | Step 7 | `orchestrator.py` (data fetch + store), integration test with mocked API | Not Started |
+| TBD | Analysis engine | Step 8 | `analysis/price_action.py`, `analysis/sector.py`, analysis tests | Not Started |
+| TBD | LLM commentary | Step 9 | `reporting/llm.py`, prompt design, structured output parsing, mocked tests | Not Started |
+| TBD | Report generation & output | Step 10 | `reporting/generator.py`, `reporting/formatter.py`, full pipeline wiring, report tests | Not Started |
+| TBD | CLI & run logging | Step 11 | `main.py` CLI, `run_log` lifecycle, structured logging, CLI tests | Not Started |
+| TBD | Polish & hardening | Step 12 | Error handling, partial runs, config table, `backfill_candles.py`, test review | Not Started |
 
 **Status values:** `Not Started` | `In Progress` | `In Review` | `Done`
 
