@@ -7,6 +7,7 @@ from agent.config import Settings
 from agent.etoro.client import EToroClient
 from agent.etoro.market_data import (
     InstrumentNotFoundError,
+    InvalidCandleCountError,
     get_candles,
     get_instrument_by_symbol,
     get_prices,
@@ -217,6 +218,107 @@ def test_get_candles_handles_various_intervals(httpx_mock):
 
     assert len(candles) == 1
     assert candles[0].close == 175.75
+
+
+def test_get_candles_rejects_count_below_minimum():
+    """get_candles raises InvalidCandleCountError when count < 1."""
+    with EToroClient(_settings()) as client:
+        with pytest.raises(InvalidCandleCountError) as excinfo:
+            get_candles(client, 1001, count=0)
+
+    assert "count must be between 1 and 1000" in str(excinfo.value)
+    assert "got 0" in str(excinfo.value)
+
+
+def test_get_candles_rejects_negative_count():
+    """get_candles raises InvalidCandleCountError when count is negative."""
+    with EToroClient(_settings()) as client:
+        with pytest.raises(InvalidCandleCountError) as excinfo:
+            get_candles(client, 1001, count=-5)
+
+    assert "count must be between 1 and 1000" in str(excinfo.value)
+    assert "got -5" in str(excinfo.value)
+
+
+def test_get_candles_rejects_count_above_maximum():
+    """get_candles raises InvalidCandleCountError when count > 1000."""
+    with EToroClient(_settings()) as client:
+        with pytest.raises(InvalidCandleCountError) as excinfo:
+            get_candles(client, 1001, count=1001)
+
+    assert "count must be between 1 and 1000" in str(excinfo.value)
+    assert "got 1001" in str(excinfo.value)
+
+
+def test_get_candles_accepts_count_at_boundaries(httpx_mock):
+    """get_candles accepts count values of 1 and 1000."""
+    # Test count = 1
+    httpx_mock.add_response(
+        url="https://example.com/market-data/instruments/1001/history/candles/desc/OneDay/1",
+        json={
+            "interval": "OneDay",
+            "candles": [
+                {
+                    "instrumentId": 1001,
+                    "candles": [
+                        {
+                            "instrumentID": 1001,
+                            "fromDate": "2025-03-07T00:00:00Z",
+                            "open": 175.50,
+                            "high": 178.25,
+                            "low": 174.00,
+                            "close": 177.80,
+                            "volume": 1234567.0,
+                        }
+                    ],
+                    "rangeOpen": 175.50,
+                    "rangeClose": 177.80,
+                    "rangeHigh": 178.25,
+                    "rangeLow": 174.00,
+                    "volume": 1234567.0,
+                }
+            ],
+        },
+    )
+
+    with EToroClient(_settings()) as client:
+        candles = get_candles(client, 1001, count=1)
+
+    assert len(candles) == 1
+
+    # Test count = 1000
+    httpx_mock.add_response(
+        url="https://example.com/market-data/instruments/1001/history/candles/desc/OneDay/1000",
+        json={
+            "interval": "OneDay",
+            "candles": [
+                {
+                    "instrumentId": 1001,
+                    "candles": [
+                        {
+                            "instrumentID": 1001,
+                            "fromDate": "2025-03-07T00:00:00Z",
+                            "open": 175.50,
+                            "high": 178.25,
+                            "low": 174.00,
+                            "close": 177.80,
+                            "volume": 1234567.0,
+                        }
+                    ],
+                    "rangeOpen": 175.50,
+                    "rangeClose": 177.80,
+                    "rangeHigh": 178.25,
+                    "rangeLow": 174.00,
+                    "volume": 1234567.0,
+                }
+            ],
+        },
+    )
+
+    with EToroClient(_settings()) as client:
+        candles = get_candles(client, 1001, count=1000)
+
+    assert len(candles) == 1
 
 
 # =============================================================================
