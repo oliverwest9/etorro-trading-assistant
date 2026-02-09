@@ -142,7 +142,7 @@ def test_get_instrument_by_symbol_logs_validation_errors(httpx_mock, capsys):
     with EToroClient(_settings()) as client:
         with pytest.raises(InstrumentNotFoundError):
             get_instrument_by_symbol(client, "BADDATA")
-    
+
     # Verify that the validation failure was logged to stdout
     captured = capsys.readouterr()
     assert "instrument_validation_failed" in captured.out
@@ -348,7 +348,7 @@ def test_invalid_instrument_response_raises_validation_error(httpx_mock, capsys)
     with EToroClient(_settings()) as client:
         instruments = search_instruments(client, "BADDATA")
         assert instruments == []
-        
+
     # Verify that the validation failure was logged to stdout
     captured = capsys.readouterr()
     assert "instrument_validation_failed" in captured.out
