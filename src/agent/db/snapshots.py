@@ -83,13 +83,10 @@ def create_snapshot(
         logger.error(
             "snapshot_create_failed",
             run_type=run_type,
-            open_positions=data["open_positions"],
+            total_value=data.get("total_value"),
             raw_result=result,
         )
-        raise RuntimeError(
-            f"Failed to create portfolio snapshot for run_type={run_type}: "
-            "empty or invalid response from SurrealDB"
-        )
+        raise RuntimeError("Failed to create portfolio snapshot in SurrealDB")
     return created
 
 
@@ -115,10 +112,7 @@ def create_snapshot_raw(
             run_type=data.get("run_type"),
             raw_result=result,
         )
-        raise RuntimeError(
-            "Failed to create portfolio snapshot: "
-            "empty or invalid response from SurrealDB"
-        )
+        raise RuntimeError("Failed to create portfolio snapshot in SurrealDB")
     return created
 
 
