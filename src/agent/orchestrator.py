@@ -15,7 +15,7 @@ Steps 4–6 (analysis, LLM, report) will be added in later roadmap steps.
 from __future__ import annotations
 
 import uuid
-from typing import Any, Literal
+from typing import Any
 
 import structlog
 from pydantic import ValidationError
@@ -31,12 +31,9 @@ from agent.etoro.client import EToroClient, EToroError
 from agent.etoro.market_data import get_candles
 from agent.etoro.models import Instrument, InstrumentSearchResponse
 from agent.etoro.portfolio import get_portfolio
+from agent.types import RunType
 
 logger = structlog.get_logger(__name__)
-
-
-# Valid run types for the agent pipeline
-RunType = Literal["market_open", "market_close"]
 
 
 class PipelineError(Exception):

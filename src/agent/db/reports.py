@@ -10,19 +10,16 @@ and reference both their parent report and the relevant instrument.
 
 from __future__ import annotations
 
-from typing import Any, Literal
+from typing import Any
 
 import structlog
 from surrealdb import RecordID
 from surrealdb.connections.sync_template import SyncTemplate
 
 from agent.db.utils import first_or_none, normalise_response
+from agent.types import RunType
 
 logger = structlog.get_logger(__name__)
-
-
-# Valid run types for the agent pipeline
-RunType = Literal["market_open", "market_close"]
 
 
 # ---------------------------------------------------------------------------
