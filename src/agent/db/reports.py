@@ -70,7 +70,16 @@ def create_report(
 
     logger.debug("report_create", run_id=run_id, run_type=run_type)
     result = db.create("report", data)
-    return first_or_none(result) or data
+    created = first_or_none(result)
+    if created is None:
+        logger.error(
+            "report_create_failed",
+            run_id=run_id,
+            run_type=run_type,
+            raw_result=result,
+        )
+        raise RuntimeError("Failed to create report record in SurrealDB")
+    return created
 
 
 def get_report_by_run_id(db: SyncTemplate, run_id: str) -> dict[str, Any] | None:
