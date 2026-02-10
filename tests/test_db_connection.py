@@ -1,7 +1,5 @@
 """Tests for the SurrealDB connection module."""
 
-import pytest
-
 from agent.config import Settings
 from agent.db.connection import get_connection, _is_embedded
 
