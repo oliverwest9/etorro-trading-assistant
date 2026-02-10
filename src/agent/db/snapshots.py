@@ -78,7 +78,19 @@ def create_snapshot(
         total_value=data["total_value"],
     )
     result = db.create("portfolio_snapshot", data)
-    return first_or_none(result) or data
+    created = first_or_none(result)
+    if created is None:
+        logger.error(
+            "snapshot_create_failed",
+            run_type=run_type,
+            open_positions=data["open_positions"],
+            raw_result=result,
+        )
+        raise RuntimeError(
+            f"Failed to create portfolio snapshot for run_type={run_type}: "
+            "empty or invalid response from SurrealDB"
+        )
+    return created
 
 
 def create_snapshot_raw(
@@ -96,7 +108,18 @@ def create_snapshot_raw(
     """
     logger.debug("snapshot_create_raw", run_type=data.get("run_type"))
     result = db.create("portfolio_snapshot", data)
-    return first_or_none(result) or data
+    created = first_or_none(result)
+    if created is None:
+        logger.error(
+            "snapshot_create_raw_failed",
+            run_type=data.get("run_type"),
+            raw_result=result,
+        )
+        raise RuntimeError(
+            "Failed to create portfolio snapshot: "
+            "empty or invalid response from SurrealDB"
+        )
+    return created
 
 
 def get_latest_snapshot(db: SyncTemplate) -> dict[str, Any] | None:
