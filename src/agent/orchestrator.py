@@ -15,7 +15,7 @@ Steps 4–6 (analysis, LLM, report) will be added in later roadmap steps.
 from __future__ import annotations
 
 import uuid
-from typing import Any
+from typing import Any, Literal
 
 import structlog
 from pydantic import ValidationError
@@ -33,6 +33,10 @@ from agent.etoro.models import Instrument, InstrumentSearchResponse
 from agent.etoro.portfolio import get_portfolio
 
 logger = structlog.get_logger(__name__)
+
+
+# Valid run types for the agent pipeline
+RunType = Literal["market_open", "market_close"]
 
 
 class PipelineError(Exception):
@@ -126,7 +130,7 @@ class Orchestrator:
     # Data pipeline
     # ------------------------------------------------------------------
 
-    def run_data_pipeline(self, run_type: str) -> dict[str, Any]:
+    def run_data_pipeline(self, run_type: RunType) -> dict[str, Any]:
         """Execute steps 1–3 of the agent run pipeline.
 
         1. **Init** — generate ``run_id``
@@ -143,7 +147,15 @@ class Orchestrator:
 
         Raises:
             PipelineError: If the portfolio fetch fails (fatal).
+            ValueError: If ``run_type`` is not a valid value.
         """
+        # Validate run_type at runtime
+        if run_type not in ("market_open", "market_close"):
+            raise ValueError(
+                f"Invalid run_type: {run_type!r}. "
+                'Must be "market_open" or "market_close".'
+            )
+
         # ---- Step 1: Init ----
         run_id = str(uuid.uuid4())
         logger.info("pipeline_start", run_id=run_id, run_type=run_type)

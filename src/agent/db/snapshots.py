@@ -7,7 +7,7 @@ historical comparisons can be made across runs.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 import structlog
 from surrealdb.connections.sync_template import SyncTemplate
@@ -18,9 +18,13 @@ from agent.etoro.models import ClientPortfolio
 logger = structlog.get_logger(__name__)
 
 
+# Valid run types for the agent pipeline
+RunType = Literal["market_open", "market_close"]
+
+
 def _portfolio_to_record(
     portfolio: ClientPortfolio,
-    run_type: str,
+    run_type: RunType,
 ) -> dict[str, Any]:
     """Map an eToro ``ClientPortfolio`` model to a SurrealDB record dict.
 
@@ -56,7 +60,7 @@ def _portfolio_to_record(
 def create_snapshot(
     db: SyncTemplate,
     portfolio: ClientPortfolio,
-    run_type: str,
+    run_type: RunType,
 ) -> dict[str, Any]:
     """Create a new portfolio snapshot record.
 
@@ -133,7 +137,7 @@ def get_latest_snapshot(db: SyncTemplate) -> dict[str, Any] | None:
 
 def query_snapshots(
     db: SyncTemplate,
-    run_type: str | None = None,
+    run_type: RunType | None = None,
     limit: int = 50,
 ) -> list[dict[str, Any]]:
     """Query portfolio snapshots, optionally filtered by run type.
