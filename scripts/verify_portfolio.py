@@ -169,8 +169,8 @@ def _generate_markdown_report(
             # Use inst_map as fallback if ticker/name missing from enrichment
             iid = pos.get("instrument_id")
             inst = inst_map.get(iid) if iid else None
-            ticker = pos.get("ticker") or (inst.symbol if inst else f"ID:{iid or '?'}")
-            name = pos.get("instrument_name") or (inst.name if inst else "—")
+            ticker = pos.get("ticker") or (getattr(inst, 'symbol', None) if inst else None) or f"ID:{iid or '?'}"
+            name = pos.get("instrument_name") or (getattr(inst, 'name', None) if inst else None) or "—"
             open_rate = pos.get("open_rate", 0)
             amount = pos.get("amount", 0)
             pnl_data = pos.get("unrealized_pnl", {})
@@ -209,8 +209,8 @@ def _generate_markdown_report(
                 break
             iid = p.get("instrument_id")
             inst = inst_map.get(iid) if iid else None
-            ticker = p.get("ticker") or (inst.symbol if inst else "?")
-            name = p.get("instrument_name") or (inst.name if inst else "—")
+            ticker = p.get("ticker") or (getattr(inst, 'symbol', None) if inst else None) or "?"
+            name = p.get("instrument_name") or (getattr(inst, 'name', None) if inst else None) or "—"
             w(f"- **{ticker}** ({name}) — +${pnl:,.2f}")
         w("")
 
@@ -223,8 +223,8 @@ def _generate_markdown_report(
             pct = (pnl / amt * 100) if amt > 0 else 0
             iid = p.get("instrument_id")
             inst = inst_map.get(iid) if iid else None
-            ticker = p.get("ticker") or (inst.symbol if inst else "?")
-            name = p.get("instrument_name") or (inst.name if inst else "—")
+            ticker = p.get("ticker") or (getattr(inst, 'symbol', None) if inst else None) or "?"
+            name = p.get("instrument_name") or (getattr(inst, 'name', None) if inst else None) or "—"
             w(f"- **{ticker}** ({name}) — -${abs(pnl):,.2f} ({pct:.1f}%)")
         w("")
 
