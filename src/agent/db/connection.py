@@ -32,6 +32,34 @@ from agent.config import Settings
 
 logger = structlog.get_logger(__name__)
 
+
+def parse_info_result(result: object) -> dict[str, object]:
+    """Normalize the result of INFO FOR DB/TABLE queries across SDK versions.
+
+    The SurrealDB SDK sometimes returns a plain dict, sometimes a list
+    containing a dict with a "result" key. This function handles both cases
+    to provide consistent output.
+
+    Args:
+        result: The raw query result from ``db.query("INFO FOR DB;")`` or similar.
+
+    Returns:
+        A dict containing the info structure (with keys like "tables", "indexes", etc.).
+        Returns an empty dict if the result cannot be parsed.
+    """
+    # SDK may return [{"result": {...}}] — unwrap it
+    if isinstance(result, list) and len(result) > 0:
+        entry = result[0]
+        if isinstance(entry, dict) and "result" in entry:
+            return entry["result"]  # type: ignore[return-value]
+        if isinstance(entry, dict):
+            return entry
+    # SDK may return {...} directly
+    if isinstance(result, dict):
+        return result
+    # Unable to parse — return empty dict
+    return {}
+
 # Bare strings that need a ``://`` suffix so the SDK's URL parser can
 # extract a valid scheme via ``urlparse()``.
 _BARE_SCHEME_ALIASES: dict[str, str] = {
