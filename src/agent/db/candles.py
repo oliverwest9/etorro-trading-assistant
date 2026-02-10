@@ -31,8 +31,10 @@ def bulk_insert_candles(
 ) -> list[dict[str, Any]]:
     """Insert candles in bulk, silently skipping duplicates.
 
-    Uses SurrealQL ``INSERT INTO`` which silently skips records that
-    would violate the ``idx_candle_lookup`` unique compound index.
+    Uses SurrealQL ``INSERT INTO`` with an array of objects for maximum
+    performance. If the bulk insert fails due to a duplicate (indicated by
+    an error string mentioning "already contains"), falls back to inserting
+    candles individually to skip only the duplicates.
 
     Args:
         db: An open SurrealDB connection.
@@ -53,35 +55,74 @@ def bulk_insert_candles(
         count=len(candles),
     )
 
-    inserted: list[dict[str, Any]] = []
-    for candle in candles:
-        result = db.query(
-            "INSERT INTO candle {"
-            "  instrument: type::thing('instrument', $etoro_id),"
-            "  timeframe: $timeframe,"
-            "  open: $open,"
-            "  high: $high,"
-            "  low: $low,"
-            "  close: $close,"
-            "  volume: $volume,"
-            "  timestamp: <datetime>$timestamp"
-            "};",
-            {
-                "etoro_id": instrument_etoro_id,
-                "timeframe": timeframe,
-                "open": candle.open,
-                "high": candle.high,
-                "low": candle.low,
-                "close": candle.close,
-                "volume": candle.volume,
-                "timestamp": candle.timestamp.isoformat(),
-            },
-        )
-        row = first_or_none(result)
-        if row:
-            inserted.append(row)
+    # Build parameter dict with one entry per candle field
+    params: dict[str, Any] = {"etoro_id": instrument_etoro_id, "timeframe": timeframe}
 
-    return inserted
+    # Build array of candle objects for the SQL
+    # Each candle gets its own parameter placeholders
+    candle_objects = []
+    for i, candle in enumerate(candles):
+        params[f"open_{i}"] = candle.open
+        params[f"high_{i}"] = candle.high
+        params[f"low_{i}"] = candle.low
+        params[f"close_{i}"] = candle.close
+        params[f"volume_{i}"] = candle.volume
+        params[f"timestamp_{i}"] = candle.timestamp.isoformat()
+
+        candle_objects.append(
+            f"{{"
+            f"instrument: type::thing('instrument', $etoro_id), "
+            f"timeframe: $timeframe, "
+            f"open: $open_{i}, "
+            f"high: $high_{i}, "
+            f"low: $low_{i}, "
+            f"close: $close_{i}, "
+            f"volume: $volume_{i}, "
+            f"timestamp: <datetime>$timestamp_{i}"
+            f"}}"
+        )
+
+    # Try bulk insert first
+    sql = f"INSERT INTO candle [{', '.join(candle_objects)}];"
+    result = db.query(sql, params)
+
+    # If bulk insert failed due to duplicate, fall back to individual inserts
+    if isinstance(result, str) and "already contains" in result:
+        logger.debug(
+            "candles_bulk_insert_fallback",
+            reason="duplicate_detected",
+            instrument_etoro_id=instrument_etoro_id,
+        )
+        inserted: list[dict[str, Any]] = []
+        for candle in candles:
+            row_result = db.query(
+                "INSERT INTO candle {"
+                "  instrument: type::thing('instrument', $etoro_id),"
+                "  timeframe: $timeframe,"
+                "  open: $open,"
+                "  high: $high,"
+                "  low: $low,"
+                "  close: $close,"
+                "  volume: $volume,"
+                "  timestamp: <datetime>$timestamp"
+                "};",
+                {
+                    "etoro_id": instrument_etoro_id,
+                    "timeframe": timeframe,
+                    "open": candle.open,
+                    "high": candle.high,
+                    "low": candle.low,
+                    "close": candle.close,
+                    "volume": candle.volume,
+                    "timestamp": candle.timestamp.isoformat(),
+                },
+            )
+            row = first_or_none(row_result)
+            if row:
+                inserted.append(row)
+        return inserted
+
+    return normalise_response(result)
 
 
 def query_candles(
