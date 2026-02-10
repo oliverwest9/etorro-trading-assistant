@@ -50,6 +50,31 @@ def _get_db_info(db: object) -> dict[str, object]:
     return {}
 
 
+def _assert_unique_index_violation(result: object, index_name: str) -> None:
+    """Assert that a query result is a unique index violation error.
+
+    SurrealDB returns constraint violations as error strings rather than
+    raising exceptions. This helper verifies the result is an error string
+    that indicates a unique index constraint violation.
+
+    Args:
+        result: The result from a db.query() call
+        index_name: The name of the index expected in the error message
+
+    Raises:
+        AssertionError: If the result is not a unique index error
+    """
+    assert isinstance(result, str), \
+        f"Expected error string from duplicate insert, got {type(result)}"
+    
+    result_lower = result.lower()
+    assert "database index" in result_lower and index_name.lower() in result_lower, \
+        f"Expected unique index error for '{index_name}', got: {result}"
+    
+    assert "already contains" in result_lower, \
+        f"Expected 'already contains' in error message, got: {result}"
+
+
 # ---------------------------------------------------------------------------
 # apply_schema tests
 # ---------------------------------------------------------------------------
@@ -197,9 +222,7 @@ def test_schema_candle_table_has_compound_index():
         """)
 
         # Verify the result is an error string about the unique index constraint
-        assert isinstance(result, str), f"Expected error string, got {type(result)}"
-        assert "index" in result.lower() and "already contains" in result.lower(), \
-            f"Expected unique index error, got: {result}"
+        _assert_unique_index_violation(result, "idx_candle_lookup")
 
         # Should still only have 1 candle
         result = db.query("SELECT * FROM candle;")
@@ -261,9 +284,7 @@ def test_schema_report_run_id_index_is_unique():
         """)
 
         # Verify the result is an error string about the unique index constraint
-        assert isinstance(result, str), f"Expected error string, got {type(result)}"
-        assert "index" in result.lower() and "already contains" in result.lower(), \
-            f"Expected unique index error, got: {result}"
+        _assert_unique_index_violation(result, "idx_run_id")
 
         result = db.query("SELECT * FROM report;")
         records = result if isinstance(result, list) else [result]
