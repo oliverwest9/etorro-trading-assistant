@@ -480,3 +480,20 @@ def test_run_data_pipeline_market_close_run_type(
     snapshot = get_latest_snapshot(db)
     assert snapshot is not None
     assert snapshot["run_type"] == "market_close"
+
+
+def test_run_data_pipeline_rejects_invalid_run_type(
+    db: SyncTemplate, test_settings: Settings
+) -> None:
+    """Invalid run_type values raise ValueError."""
+    orch = _create_orchestrator(test_settings, db)
+
+    with pytest.raises(ValueError, match=r"Invalid run_type: 'invalid'"):
+        orch.run_data_pipeline("invalid")  # type: ignore[arg-type]
+
+    with pytest.raises(ValueError, match=r"Invalid run_type: 'Market_Open'"):
+        orch.run_data_pipeline("Market_Open")  # type: ignore[arg-type]
+
+    with pytest.raises(ValueError, match=r"Invalid run_type: ''"):
+        orch.run_data_pipeline("")  # type: ignore[arg-type]
+
