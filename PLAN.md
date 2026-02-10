@@ -162,6 +162,7 @@ DEFINE FIELD cash_available  ON portfolio_snapshot TYPE float;
 DEFINE FIELD open_positions  ON portfolio_snapshot TYPE int;
 DEFINE FIELD total_pnl       ON portfolio_snapshot TYPE float;
 DEFINE FIELD positions       ON portfolio_snapshot TYPE array;
+DEFINE FIELD positions.*     ON portfolio_snapshot FLEXIBLE TYPE object;
 DEFINE FIELD run_type        ON portfolio_snapshot TYPE string; -- market_open, market_close
 DEFINE FIELD captured_at     ON portfolio_snapshot TYPE datetime DEFAULT time::now();
 
@@ -186,6 +187,7 @@ DEFINE FIELD run_id          ON report TYPE string;
 DEFINE FIELD run_type        ON report TYPE string;             -- market_open, market_close
 DEFINE FIELD portfolio_snapshot ON report TYPE record<portfolio_snapshot>;
 DEFINE FIELD recommendations ON report TYPE array;              -- array of action recommendations
+DEFINE FIELD recommendations.* ON report FLEXIBLE TYPE object;
 DEFINE FIELD commentary      ON report TYPE string;             -- LLM-generated market commentary
 DEFINE FIELD summary         ON report TYPE string;             -- brief headline summary
 DEFINE FIELD report_markdown ON report TYPE string;             -- full rendered markdown report
@@ -214,6 +216,7 @@ DEFINE FIELD status          ON run_log TYPE string;            -- started, comp
 DEFINE FIELD instruments_analysed ON run_log TYPE int;
 DEFINE FIELD recommendations_made ON run_log TYPE int;
 DEFINE FIELD errors          ON run_log TYPE option<array>;
+DEFINE FIELD errors.*        ON run_log FLEXIBLE TYPE object;
 DEFINE FIELD duration_ms     ON run_log TYPE option<int>;
 DEFINE FIELD started_at      ON run_log TYPE datetime           DEFAULT time::now();
 DEFINE FIELD completed_at    ON run_log TYPE option<datetime>;
@@ -418,14 +421,14 @@ Each step is designed to be independently testable before moving on. We start wi
 - Verify: `pip install -e ".[dev]"` and `pytest` both succeed (with zero tests)
 
 **Acceptance Criteria:**
-- [ ] `pyproject.toml` exists with all dependencies from section 5, including `[dev]` extras
-- [ ] Full directory structure under `src/agent/` matches section 4 (all `__init__.py` files present)
-- [ ] `.env.example` contains all variables from section 8 with placeholder values
-- [ ] `docker-compose.yml` starts SurrealDB successfully with `docker compose up -d`
-- [ ] `pip install -e ".[dev]"` completes without errors
-- [ ] `pytest` runs and exits 0 (no tests collected is acceptable)
-- [ ] `reports/` directory exists with `.gitkeep`, and is gitignored
-- [ ] No secrets or real API keys are committed
+- [x] `pyproject.toml` exists with all dependencies from section 5, including `[dev]` extras
+- [x] Full directory structure under `src/agent/` matches section 4 (all `__init__.py` files present)
+- [x] `.env.example` contains all variables from section 8 with placeholder values
+- [x] `docker-compose.yml` starts SurrealDB successfully with `docker compose up -d`
+- [x] `pip install -e ".[dev]"` completes without errors
+- [x] `pytest` runs and exits 0 (no tests collected is acceptable)
+- [x] `reports/` directory exists with `.gitkeep`, and is gitignored
+- [x] No secrets or real API keys are committed
 
 ### Step 2: eToro API Client - Authentication
 - Implement `etoro/client.py`: base HTTP client with auth headers
@@ -435,12 +438,12 @@ Each step is designed to be independently testable before moving on. We start wi
 - **Manual verification**: make a single authenticated request to eToro API and confirm 200 response
 
 **Acceptance Criteria:**
-- [ ] `EToroClient` class sends `x-api-key`, `x-user-key`, and a unique `x-request-id` UUID on every request
-- [ ] Config loads all eToro/SurrealDB/LLM settings from `.env` via `pydantic-settings`
-- [ ] Client retries failed requests up to 3 times with exponential backoff
-- [ ] 401 and 403 responses raise clear, descriptive exceptions
-- [ ] All tests pass with `pytest` - no real API calls in tests
-- [ ] Manual test confirms a 200 response from at least one eToro endpoint
+- [x] `EToroClient` class sends `x-api-key`, `x-user-key`, and a unique `x-request-id` UUID on every request
+- [x] Config loads all eToro/SurrealDB/LLM settings from `.env` via `pydantic-settings`
+- [x] Client retries failed requests up to 3 times with exponential backoff
+- [x] 401 and 403 responses raise clear, descriptive exceptions
+- [x] All tests pass with `pytest` - no real API calls in tests
+- [x] Manual test confirms a 200 response from at least one eToro endpoint
 
 ### Step 3: eToro API Client - Market Data
 - Implement `etoro/market_data.py`: instrument search, OHLCV fetch, price fetch
@@ -449,12 +452,12 @@ Each step is designed to be independently testable before moving on. We start wi
 - **Manual verification**: fetch real OHLCV data for 2-3 instruments, inspect output
 
 **Acceptance Criteria:**
-- [ ] `search_instruments(query)` returns a list of instruments with `etoro_id`, `symbol`, `name`, `asset_class`
-- [ ] `get_candles(instrument_id, timeframe)` returns OHLCV data parsed into Pydantic models
-- [ ] `get_prices(instrument_ids)` returns current bid/ask for each instrument
-- [ ] All API responses are validated through Pydantic models (invalid data raises, not silently ignored)
-- [ ] Each endpoint has at least one test with mocked HTTP responses
-- [ ] Manual test fetches real candle data for a stock, a crypto, and an ETF
+- [x] `search_instruments(query)` returns a list of instruments with `etoro_id`, `symbol`, `name`, `asset_class`
+- [x] `get_candles(instrument_id, timeframe)` returns OHLCV data parsed into Pydantic models
+- [x] `get_prices(instrument_ids)` returns current bid/ask for each instrument
+- [x] All API responses are validated through Pydantic models (invalid data raises, not silently ignored)
+- [x] Each endpoint has at least one test with mocked HTTP responses
+- [x] Manual test fetches real candle data for a stock, a crypto, and an ETF
 
 ### Step 4: eToro API Client - Portfolio
 - Implement `etoro/portfolio.py`: portfolio positions, trading history
@@ -463,11 +466,11 @@ Each step is designed to be independently testable before moving on. We start wi
 - **Manual verification**: fetch real portfolio state, confirm positions match eToro UI
 
 **Acceptance Criteria:**
-- [ ] `get_portfolio()` returns current positions with instrument, amount, P&L, open date
-- [ ] `get_trading_history()` returns closed trades with entry/exit prices and P&L
-- [ ] Portfolio and history responses are validated through Pydantic models
-- [ ] Each endpoint has at least one test with mocked HTTP responses
-- [ ] Manual test confirms position count and instruments match what is shown in the eToro UI
+- [x] `get_portfolio()` returns current positions with instrument, amount, P&L, open date
+- [x] `get_trading_history()` returns closed trades with entry/exit prices and P&L
+- [x] Portfolio and history responses are validated through Pydantic models
+- [x] Each endpoint has at least one test with mocked HTTP responses
+- [x] Manual test confirms position count and instruments match what is shown in the eToro UI
 
 ### Step 5: SurrealDB Connection & Schema
 - Implement `db/connection.py`: connect to SurrealDB, handle lifecycle
@@ -479,12 +482,12 @@ Each step is designed to be independently testable before moving on. We start wi
 > **AWS awareness:** The connection factory (`get_connection()`) must support three `SURREAL_URL` modes transparently: `ws://` for local Docker dev, `memory` for tests, and `file://` for future AWS embedded deployment. Tests should use in-memory mode so they run without Docker. Upgrade Docker image to SurrealDB v2.x to match the Python SDK.
 
 **Acceptance Criteria:**
-- [ ] `get_connection()` connects to SurrealDB using env vars and selects the correct namespace/database
-- [ ] `apply_schema()` executes all SurrealQL from section 3 without errors
-- [ ] `python scripts/init_db.py` applies schema to a running SurrealDB instance
-- [ ] Running `init_db.py` twice is idempotent (no errors on re-apply)
-- [ ] Tests verify all 8 tables exist (`instrument`, `candle`, `portfolio_snapshot`, `analysis`, `report`, `recommendation`, `run_log`, `config`)
-- [ ] Tests verify indexes are created (`idx_symbol`, `idx_etoro_id`, `idx_candle_lookup`, `idx_run_id`, `idx_config_key`)
+- [x] `get_connection()` connects to SurrealDB using env vars and selects the correct namespace/database
+- [x] `apply_schema()` executes all SurrealQL from section 3 without errors
+- [x] `python scripts/init_db.py` applies schema to a running SurrealDB instance
+- [x] Running `init_db.py` twice is idempotent (no errors on re-apply)
+- [x] Tests verify all 8 tables exist (`instrument`, `candle`, `portfolio_snapshot`, `analysis`, `report`, `recommendation`, `run_log`, `config`)
+- [x] Tests verify indexes are created (`idx_symbol`, `idx_etoro_id`, `idx_candle_lookup`, `idx_run_id`, `idx_config_key`)
 
 ### Step 6: SurrealDB Data Layer
 - Implement `db/instruments.py`: upsert and query instruments
@@ -494,12 +497,12 @@ Each step is designed to be independently testable before moving on. We start wi
 - Write tests for each module (insert, query, upsert, edge cases)
 
 **Acceptance Criteria:**
-- [ ] `instruments.py`: upsert by symbol (insert or update), query by symbol, query by etoro_id, list all
-- [ ] `candles.py`: bulk insert candles, query by instrument + timeframe + date range, no duplicate insertion
-- [ ] `snapshots.py`: create snapshot, query latest, query by date range
-- [ ] `reports.py`: create report with recommendations, query by run_id, query latest, list by date range
-- [ ] Each module has tests covering insert, query, upsert, and edge cases (empty results, duplicates)
-- [ ] All tests pass against a real SurrealDB test instance (not mocked)
+- [x] `instruments.py`: upsert by symbol (insert or update), query by symbol, query by etoro_id, list all
+- [x] `candles.py`: bulk insert candles, query by instrument + timeframe + date range, no duplicate insertion
+- [x] `snapshots.py`: create snapshot, query latest, query by date range
+- [x] `reports.py`: create report with recommendations, query by run_id, query latest, list by date range
+- [x] Each module has tests covering insert, query, upsert, and edge cases (empty results, duplicates)
+- [x] All tests pass against a real SurrealDB test instance (not mocked)
 
 ### Step 7: End-to-End Data Pipeline
 - Implement `orchestrator.py` (steps 1-3 of the run pipeline only)
@@ -700,10 +703,10 @@ Each row maps to a discrete PR. Complete and merge each PR before starting the n
 |---|---|---|---|---|
 | #1 | Project scaffolding | Step 1 | `pyproject.toml`, directory structure, `.env.example`, `docker-compose.yml`, pytest config | Done |
 | #4 | eToro API client - auth | Step 2 | `etoro/client.py`, `config.py`, auth header tests, error handling tests | Done |
-| #5 | eToro API client - market data | Step 3 | `etoro/market_data.py`, `etoro/models.py`, mocked endpoint tests | In Review |
-| TBD | eToro API client - portfolio | Step 4 | `etoro/portfolio.py`, portfolio response models, mocked tests | Done |
-| TBD | SurrealDB connection & schema | Step 5 | `db/connection.py`, `db/schema.py`, `scripts/init_db.py`, schema tests | In Progress |
-| TBD | SurrealDB data layer | Step 6 | `db/instruments.py`, `db/candles.py`, `db/snapshots.py`, `db/reports.py`, CRUD tests | Not Started |
+| #5 | eToro API client - market data | Step 3 | `etoro/market_data.py`, `etoro/models.py`, mocked endpoint tests | Done |
+| #6 | eToro API client - portfolio | Step 4 | `etoro/portfolio.py`, portfolio response models, mocked tests | Done |
+| #7 | SurrealDB connection & schema | Step 5 | `db/connection.py`, `db/schema.py`, `scripts/init_db.py`, schema tests | Done |
+| #8 | SurrealDB data layer | Step 6 | `db/utils.py`, `db/instruments.py`, `db/candles.py`, `db/snapshots.py`, `db/reports.py`, CRUD tests | Done |
 | TBD | End-to-end data pipeline | Step 7 | `orchestrator.py` (data fetch + store), integration test with mocked API | Not Started |
 | TBD | Analysis engine | Step 8 | `analysis/price_action.py`, `analysis/sector.py`, analysis tests | Not Started |
 | TBD | LLM commentary | Step 9 | `reporting/llm.py`, prompt design, structured output parsing, mocked tests | Not Started |
