@@ -506,17 +506,22 @@ Each step is designed to be independently testable before moving on. We start wi
 
 ### Step 7: End-to-End Data Pipeline
 - Implement `orchestrator.py` (steps 1-3 of the run pipeline only)
-- Wire up: fetch instruments from eToro -> store in SurrealDB -> fetch candles -> store -> fetch portfolio -> snapshot
-- Write integration test: mock eToro API, verify data flows through to SurrealDB
-- **Manual verification**: run pipeline, query SurrealDB to confirm data is stored correctly
+- Wire up: fetch portfolio -> derive instrument IDs from positions -> resolve instrument metadata -> fetch candles -> store all in SurrealDB
+- Tracked instruments are derived from the user's current portfolio positions (config table deferred to Step 12)
+- Create `scripts/run_pipeline.py` for manual verification with real API credentials
+- Write integration tests: mock eToro API, verify data flows through to SurrealDB
+- **Manual verification**: run `scripts/run_pipeline.py`, query SurrealDB to confirm data is stored correctly
 
 **Acceptance Criteria:**
-- [ ] `Orchestrator.run_data_pipeline()` executes steps 1-3 of the run pipeline (init, fetch market data, fetch portfolio)
-- [ ] Instruments are resolved via eToro API and stored/updated in SurrealDB
-- [ ] OHLCV candles are fetched for all tracked instruments and stored in SurrealDB
-- [ ] Portfolio is fetched and a snapshot is saved to SurrealDB
-- [ ] Integration test with mocked eToro API confirms data flows end-to-end
-- [ ] A failed instrument fetch does not abort the entire pipeline
+- [ ] `Orchestrator.run_data_pipeline()` executes steps 1-3 of the run pipeline (init, fetch portfolio, fetch market data)
+- [ ] Portfolio is fetched first and a snapshot is saved to SurrealDB
+- [ ] Instrument IDs are extracted from portfolio positions and resolved via the instruments API
+- [ ] Instruments are upserted in SurrealDB with metadata from the API
+- [ ] OHLCV candles are fetched for each portfolio instrument and stored in SurrealDB
+- [ ] A failed instrument fetch does not abort the entire pipeline — errors are logged and returned in the summary
+- [ ] An empty portfolio (no positions) completes without error
+- [ ] Integration tests with mocked eToro API confirm data flows end-to-end
+- [ ] `scripts/run_pipeline.py` runs the pipeline with real credentials and prints a summary
 
 ### Step 8: Analysis Engine
 - Implement `analysis/price_action.py`: trend detection (higher highs/lows, moving average direction), momentum (rate of change), key price levels
@@ -591,15 +596,61 @@ Each step is designed to be independently testable before moving on. We start wi
 - [ ] All existing tests still pass
 - [ ] No unhandled exceptions in any error scenario (API down, DB down, LLM down, invalid data)
 
+### Step 13: LangChain/LangGraph Agent Migration
+- Replace `orchestrator.py` procedural pipeline with a LangGraph agent
+- Wrap existing modules as LangGraph tools (see section 7.1)
+- Add SurrealDB as agent memory (query previous runs, reports)
+- The agent should produce the same report format as the procedural pipeline
+- Write tests comparing agent output to expected report structure
+
+**Acceptance Criteria:**
+- [ ] LangGraph agent runs the same data pipeline as `Orchestrator.run_data_pipeline()`
+- [ ] Agent uses tools to fetch portfolio, candles, and instrument metadata
+- [ ] Agent can query SurrealDB for historical context (previous reports, analyses)
+- [ ] Agent produces a report in the same format as the procedural pipeline
+- [ ] Agent demonstrates at least one adaptive decision (e.g. fetching extra history for volatile instruments)
+- [ ] All existing tests still pass — no regressions
+- [ ] New tests verify agent tool invocations and report output
+
 ### Future Phases (Post-MVP)
 
 | Phase | Description |
 |---|---|
+| **LangChain/LangGraph Migration** | Replace procedural orchestrator with an agentic pipeline (see Step 13 and section 7.1) |
 | **Automated Trading** | Add write-permission API key, implement position open/close, risk manager |
 | **AWS Deployment** | Containerise with Docker, deploy to ECS/Fargate, trigger via EventBridge schedule |
 | **Notifications** | Send report summary via Telegram/Discord/email |
 | **Dashboard** | Simple web UI to browse historical reports (SurrealDB live queries) |
 | **Strategy Backtesting** | Test analysis rules against historical candle data |
+
+### 7.1 Future: LangChain/LangGraph Migration
+
+The current `Orchestrator` is a procedural pipeline — a fixed sequence of steps with no decision-making. A future migration to **LangGraph** would replace this with an agentic architecture where an LLM decides what to fetch, analyse, and report on.
+
+**Current state:** Fixed pipeline: fetch portfolio → resolve instruments → fetch candles → (future: analyse → LLM → report). Every instrument gets the same treatment regardless of context.
+
+**Target state:** A LangGraph agent with tools that can make adaptive decisions:
+- Fetch more history if a trend is unclear
+- Skip stable positions that haven't moved
+- Deep-dive on volatile instruments with additional timeframes
+- Adjust analysis depth based on portfolio risk
+
+**Tools to expose as LangGraph tools:**
+
+| Tool | Maps to | Purpose |
+|---|---|---|
+| `fetch_portfolio` | `etoro.portfolio.get_portfolio()` | Get current positions |
+| `fetch_candles` | `etoro.market_data.get_candles()` | Get OHLCV history |
+| `search_instrument` | `etoro.market_data.search_instruments()` | Resolve ticker symbols |
+| `query_db` | `db.*` query functions | Read historical data, previous reports |
+| `analyse_price_action` | `analysis.price_action.analyse()` | Run technical analysis |
+| `generate_report` | `reporting.generator.generate()` | Assemble final report |
+
+**Memory:** SurrealDB serves as long-term memory — previous runs, reports, analyses, and portfolio history are already persisted. The agent can query this context to inform decisions.
+
+**Key design constraint:** Tools must be thin wrappers around existing modules. The LangChain migration should reuse all Step 2–12 code, only replacing the orchestration layer. This means the MVP's modular architecture (separate etoro/, db/, analysis/, reporting/ packages) is preserved.
+
+**Dependencies to add:** `langchain`, `langgraph`, `langchain-openai` / `langchain-anthropic`
 
 ---
 
@@ -707,7 +758,7 @@ Each row maps to a discrete PR. Complete and merge each PR before starting the n
 | #6 | eToro API client - portfolio | Step 4 | `etoro/portfolio.py`, portfolio response models, mocked tests | Done |
 | #7 | SurrealDB connection & schema | Step 5 | `db/connection.py`, `db/schema.py`, `scripts/init_db.py`, schema tests | Done |
 | #8 | SurrealDB data layer | Step 6 | `db/utils.py`, `db/instruments.py`, `db/candles.py`, `db/snapshots.py`, `db/reports.py`, CRUD tests | Done |
-| TBD | End-to-end data pipeline | Step 7 | `orchestrator.py` (data fetch + store), integration test with mocked API | Not Started |
+| TBD | End-to-end data pipeline | Step 7 | `orchestrator.py` (data fetch + store), `scripts/run_pipeline.py`, integration tests | In Progress |
 | TBD | Analysis engine | Step 8 | `analysis/price_action.py`, `analysis/sector.py`, analysis tests | Not Started |
 | TBD | LLM commentary | Step 9 | `reporting/llm.py`, prompt design, structured output parsing, mocked tests | Not Started |
 | TBD | Report generation & output | Step 10 | `reporting/generator.py`, `reporting/formatter.py`, full pipeline wiring, report tests | Not Started |

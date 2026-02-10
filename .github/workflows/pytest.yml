@@ -27,8 +27,10 @@ jobs:
           python -m pip install --upgrade pip
           pip install -e ".[dev]"
 
-      - name: Run pytest
-        run: pytest
+      # Unit tests (mocked HTTP) and integration tests (in-memory SurrealDB)
+      # both run here — no Docker or external services needed.
+      - name: Run tests
+        run: pytest -v --tb=short
 
       - name: Create issue on test failure
         if: failure()

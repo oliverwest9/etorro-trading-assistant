@@ -15,8 +15,8 @@ from agent.db.schema import apply_schema
 def _test_settings() -> Settings:
     """Create Settings suitable for in-memory SurrealDB tests."""
     return Settings(
-        etoro_api_key="test",
-        etoro_user_key="test",
+        etoro_api_key="test-api-key",
+        etoro_user_key="test-user-key",
         etoro_base_url="https://example.com",
         surreal_url="memory",
         surreal_namespace="test_ns",
@@ -27,6 +27,12 @@ def _test_settings() -> Settings:
         llm_api_key="test",
         llm_model="gpt-4o",
     )
+
+
+@pytest.fixture()
+def test_settings() -> Settings:
+    """Provide test-safe Settings for use in tests that need the config."""
+    return _test_settings()
 
 
 @pytest.fixture()
