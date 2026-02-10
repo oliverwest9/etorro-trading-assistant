@@ -59,6 +59,9 @@ def bulk_insert_candles(
     params: dict[str, Any] = {"etoro_id": instrument_etoro_id, "timeframe": timeframe}
 
     # Build array of candle objects for the SQL
+    # Note: We use f-strings to construct the array structure because SurrealDB
+    # doesn't support passing arrays of complex objects (with type::thing() calls)
+    # via parameters. Each candle's values are still parameterized for safety.
     # Each candle gets its own parameter placeholders
     candle_objects = []
     for i, candle in enumerate(candles):
@@ -87,6 +90,9 @@ def bulk_insert_candles(
     result = db.query(sql, params)
 
     # If bulk insert failed due to duplicate, fall back to individual inserts
+    # Note: SurrealDB returns error strings (not exceptions) for constraint violations.
+    # We detect duplicates by checking for the "already contains" substring in the error.
+    # This is the only reliable way given the current SDK's error handling.
     if isinstance(result, str) and "already contains" in result:
         logger.debug(
             "candles_bulk_insert_fallback",
