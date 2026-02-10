@@ -183,20 +183,24 @@ def test_schema_candle_table_has_compound_index():
 
         # Inserting a duplicate (same instrument + timeframe + timestamp)
         # should fail due to the unique index
-        try:
-            db.query("""
-                CREATE candle SET
-                    instrument = instrument:aapl,
-                    timeframe = '1d',
-                    open = 151.0,
-                    high = 156.0,
-                    low = 150.0,
-                    close = 154.0,
-                    volume = 2000000.0,
-                    timestamp = d'2024-01-15T00:00:00Z';
-            """)
-        except Exception:
-            pass  # Expected — duplicate index violation
+        duplicate_result = db.query("""
+            CREATE candle SET
+                instrument = instrument:aapl,
+                timeframe = '1d',
+                open = 151.0,
+                high = 156.0,
+                low = 150.0,
+                close = 154.0,
+                volume = 2000000.0,
+                timestamp = d'2024-01-15T00:00:00Z';
+        """)
+        # SurrealDB returns an error string (not an exception) for constraint violations
+        assert isinstance(duplicate_result, str), (
+            f"Expected duplicate insert to return error string, got {type(duplicate_result)}"
+        )
+        assert "index" in duplicate_result.lower(), (
+            f"Expected error message to mention 'index', got: {duplicate_result}"
+        )
 
         # Should still only have 1 candle
         result = db.query("SELECT * FROM candle;")
@@ -245,19 +249,23 @@ def test_schema_report_run_id_index_is_unique():
         """)
 
         # Second report with same run_id should fail
-        try:
-            db.query("""
-                CREATE report SET
-                    run_id = 'run-001',
-                    run_type = 'market_close',
-                    portfolio_snapshot = portfolio_snapshot:snap1,
-                    recommendations = [],
-                    commentary = 'Dupe commentary',
-                    summary = 'Dupe summary',
-                    report_markdown = '# Dupe';
-            """)
-        except Exception:
-            pass  # Expected — duplicate index
+        duplicate_result = db.query("""
+            CREATE report SET
+                run_id = 'run-001',
+                run_type = 'market_close',
+                portfolio_snapshot = portfolio_snapshot:snap1,
+                recommendations = [],
+                commentary = 'Dupe commentary',
+                summary = 'Dupe summary',
+                report_markdown = '# Dupe';
+        """)
+        # SurrealDB returns an error string (not an exception) for constraint violations
+        assert isinstance(duplicate_result, str), (
+            f"Expected duplicate insert to return error string, got {type(duplicate_result)}"
+        )
+        assert "index" in duplicate_result.lower() and "run_id" in duplicate_result.lower(), (
+            f"Expected error message to mention 'index' and 'run_id', got: {duplicate_result}"
+        )
 
         result = db.query("SELECT * FROM report;")
         records = result if isinstance(result, list) else [result]
