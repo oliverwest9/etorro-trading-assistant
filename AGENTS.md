@@ -63,6 +63,7 @@ Follow the roadmap steps in `PLAN.md` section 7. Each step should be completed a
 - All tables use `SCHEMAFULL` - no schemaless tables
 - Use `record<table>` types for foreign key references between tables
 - Connection details come from environment variables, never hardcoded
+- **AWS migration:** The DB connection layer must work with remote (`ws://`), in-memory (`memory`), and embedded file-based (`file://`) URLs via the same `SURREAL_URL` setting. This allows the agent to run on AWS as a standalone CLI process without a separate DB server. Do not introduce Docker-only assumptions in production code paths.
 
 ### Configuration
 

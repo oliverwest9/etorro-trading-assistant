@@ -6,6 +6,12 @@ A Python-based **advisory trading agent** that runs twice daily at UK market ope
 
 SurrealDB is used as the persistence layer, storing market data, portfolio snapshots, reports, and configuration. The system runs locally for now but is structured to be deployable to AWS in the future.
 
+> **AWS Migration Note:** All infrastructure and persistence decisions should keep future AWS Free Tier deployment in mind. The target is an EC2 t3.micro instance running the agent on a cron schedule, using SurrealDB in **embedded file-based mode** (no separate DB server). This means:
+> - The DB connection layer must support remote (WebSocket), embedded file-based, and in-memory modes via the `SURREAL_URL` setting
+> - Avoid dependencies on Docker or long-running services in production — the agent should be a single CLI invocation
+> - Keep compute and storage minimal (well within Free Tier: 750 hrs/month EC2, 5 GB S3 for backups)
+> - No AWS-specific code until migration phase — just keep the architecture compatible
+
 **Asset coverage:** Stocks, crypto, ETFs, and commodities.
 
 ---
@@ -470,6 +476,8 @@ Each step is designed to be independently testable before moving on. We start wi
 - Write tests: schema applies cleanly, tables exist, indexes are created
 - **Manual verification**: `docker compose up -d`, run init script, query tables via SurrealDB CLI
 
+> **AWS awareness:** The connection factory (`get_connection()`) must support three `SURREAL_URL` modes transparently: `ws://` for local Docker dev, `memory` for tests, and `file://` for future AWS embedded deployment. Tests should use in-memory mode so they run without Docker. Upgrade Docker image to SurrealDB v2.x to match the Python SDK.
+
 **Acceptance Criteria:**
 - [ ] `get_connection()` connects to SurrealDB using env vars and selects the correct namespace/database
 - [ ] `apply_schema()` executes all SurrealQL from section 3 without errors
@@ -694,7 +702,7 @@ Each row maps to a discrete PR. Complete and merge each PR before starting the n
 | #4 | eToro API client - auth | Step 2 | `etoro/client.py`, `config.py`, auth header tests, error handling tests | Done |
 | #5 | eToro API client - market data | Step 3 | `etoro/market_data.py`, `etoro/models.py`, mocked endpoint tests | In Review |
 | TBD | eToro API client - portfolio | Step 4 | `etoro/portfolio.py`, portfolio response models, mocked tests | Done |
-| TBD | SurrealDB connection & schema | Step 5 | `db/connection.py`, `db/schema.py`, `scripts/init_db.py`, schema tests | Not Started |
+| TBD | SurrealDB connection & schema | Step 5 | `db/connection.py`, `db/schema.py`, `scripts/init_db.py`, schema tests | In Progress |
 | TBD | SurrealDB data layer | Step 6 | `db/instruments.py`, `db/candles.py`, `db/snapshots.py`, `db/reports.py`, CRUD tests | Not Started |
 | TBD | End-to-end data pipeline | Step 7 | `orchestrator.py` (data fetch + store), integration test with mocked API | Not Started |
 | TBD | Analysis engine | Step 8 | `analysis/price_action.py`, `analysis/sector.py`, analysis tests | Not Started |
