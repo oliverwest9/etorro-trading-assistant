@@ -184,7 +184,18 @@ def create_recommendation(
         instrument_etoro_id=instrument_etoro_id,
     )
     result = db.create("recommendation", data)
-    return first_or_none(result) or data
+    created = first_or_none(result)
+    if not isinstance(created, dict) or "id" not in created:
+        logger.error(
+            "recommendation_create_failed",
+            report_id=report_id,
+            instrument_etoro_id=instrument_etoro_id,
+            action=action,
+            conviction=conviction,
+            raw_result=result,
+        )
+        raise ValueError("Failed to create recommendation record in SurrealDB")
+    return created
 
 
 def get_recommendations_for_report(
