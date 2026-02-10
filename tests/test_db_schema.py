@@ -120,13 +120,14 @@ def test_schema_instrument_table_is_schemafull():
     with get_connection(_test_settings()) as db:
         apply_schema(db)
 
-        # Insert a record with only the required fields
+        # Insert a record with defined fields AND an undefined field
         db.query("""
             CREATE instrument SET
                 etoro_id = 1001,
                 symbol = 'AAPL',
                 name = 'Apple Inc.',
-                asset_class = 'stock';
+                asset_class = 'stock',
+                random_field = 'should_be_omitted';
         """)
         result = db.query("SELECT * FROM instrument;")
         records = result if isinstance(result, list) else [result]
