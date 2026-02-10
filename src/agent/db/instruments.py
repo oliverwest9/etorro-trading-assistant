@@ -10,6 +10,7 @@ from ``get_connection()``.
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from typing import Any
 
 import structlog
@@ -22,7 +23,7 @@ from agent.etoro.models import Instrument
 logger = structlog.get_logger(__name__)
 
 # Fields defined as ``option<T>`` in the schema that the SDK may omit from
-# results when their value is NONE.  We normalise them to explicit ``None``
+# results when their value is ``None``.  We normalise them to explicit ``None``
 # so callers can reliably use ``record["field"]`` without KeyError.
 _OPTIONAL_FIELDS: dict[str, object] = {
     "exchange": None,
@@ -53,6 +54,7 @@ def _instrument_to_record(instrument: Instrument) -> dict[str, Any]:
         "asset_class": instrument.asset_class,
         "exchange": str(instrument.exchange_id) if instrument.exchange_id is not None else None,
         "is_active": True,
+        "updated_at": datetime.now(timezone.utc),
     }
 
 
@@ -74,8 +76,19 @@ def upsert_instrument(db: SyncTemplate, instrument: Instrument) -> dict[str, Any
 
     logger.debug("instrument_upsert", etoro_id=instrument.instrument_id, symbol=instrument.symbol)
     result = db.upsert(record_id, data)
-    record = first_or_none(result) or data
-    return _normalise_instrument(record) or record
+    record = first_or_none(result)
+    if record is None:
+        logger.error(
+            "instrument_upsert_failed",
+            etoro_id=instrument.instrument_id,
+            symbol=instrument.symbol,
+            result=result,
+        )
+        raise RuntimeError(
+            f"Failed to upsert instrument {instrument.instrument_id} ({instrument.symbol}): "
+            "empty or invalid response from SurrealDB"
+        )
+    return _normalise_instrument(record)
 
 
 def upsert_instruments(db: SyncTemplate, instruments: list[Instrument]) -> list[dict[str, Any]]:

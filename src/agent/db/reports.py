@@ -70,7 +70,16 @@ def create_report(
 
     logger.debug("report_create", run_id=run_id, run_type=run_type)
     result = db.create("report", data)
-    return first_or_none(result) or data
+    created = first_or_none(result)
+    if created is None:
+        logger.error(
+            "report_create_failed",
+            run_id=run_id,
+            run_type=run_type,
+            raw_result=result,
+        )
+        raise RuntimeError("Failed to create report record in SurrealDB")
+    return created
 
 
 def get_report_by_run_id(db: SyncTemplate, run_id: str) -> dict[str, Any] | None:
@@ -184,7 +193,18 @@ def create_recommendation(
         instrument_etoro_id=instrument_etoro_id,
     )
     result = db.create("recommendation", data)
-    return first_or_none(result) or data
+    created = first_or_none(result)
+    if not isinstance(created, dict) or "id" not in created:
+        logger.error(
+            "recommendation_create_failed",
+            report_id=report_id,
+            instrument_etoro_id=instrument_etoro_id,
+            action=action,
+            conviction=conviction,
+            raw_result=result,
+        )
+        raise ValueError("Failed to create recommendation record in SurrealDB")
+    return created
 
 
 def get_recommendations_for_report(
@@ -215,18 +235,24 @@ def get_recommendations_for_report(
 def _to_record_id(id_str: str) -> RecordID:
     """Convert a ``"table:id"`` string into a ``RecordID``.
 
-    If the string contains a ``:``, it is split into table and id parts.
-    Otherwise it is returned as-is wrapped as a RecordID with the string
-    as the id and an empty table (which usually means the caller passed
-    something unexpected — this avoids a crash).
+    The input must be in ``table:id`` format. Both the table and id parts
+    must be non-empty; otherwise a ``ValueError`` is raised.
 
     Args:
         id_str: A record ID string like ``"report:abc123"``.
 
     Returns:
         A ``RecordID`` instance.
+
+    Raises:
+        ValueError: If ``id_str`` is not in ``table:id`` format or either
+            component is empty.
     """
-    if ":" in id_str:
-        table, key = id_str.split(":", 1)
-        return RecordID(table, key)
-    return RecordID(id_str, "")
+    if ":" not in id_str:
+        raise ValueError(f"Invalid record id format (expected 'table:id'): {id_str!r}")
+
+    table, key = id_str.split(":", 1)
+    if not table or not key:
+        raise ValueError(f"Invalid record id components in {id_str!r}: table={table!r}, id={key!r}")
+
+    return RecordID(table, key)

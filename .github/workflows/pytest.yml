@@ -8,6 +8,7 @@ on:
 
 permissions:
   contents: read
+  issues: write
 
 jobs:
   pytest:
@@ -30,3 +31,20 @@ jobs:
       # both run here — no Docker or external services needed.
       - name: Run tests
         run: pytest -v --tb=short
+
+      - name: Create issue on test failure
+        if: failure()
+        uses: actions/github-script@v7
+        env:
+          COPILOT_ASSIGNEE: ${{ vars.COPILOT_ASSIGNEE || 'copilot' }}
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const runUrl = `${context.serverUrl}/${owner}/${repo}/actions/runs/${context.runId}`;
+            await github.rest.issues.create({
+              owner,
+              repo,
+              title: `CI failure: pytest (${context.runId})`,
+              body: `Pytest failed in [workflow run](${runUrl}).\n\nCommit: ${context.sha}`,
+              assignees: [process.env.COPILOT_ASSIGNEE],
+            });
