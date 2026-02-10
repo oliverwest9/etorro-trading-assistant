@@ -3,8 +3,6 @@
 All tests use in-memory SurrealDB — no Docker required.
 """
 
-import pytest
-
 from agent.config import Settings
 from agent.db.connection import get_connection
 from agent.db.schema import (
