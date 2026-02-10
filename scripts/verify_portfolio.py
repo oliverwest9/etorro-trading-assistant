@@ -128,12 +128,12 @@ def _generate_markdown_report(
         inst = inst_map.get(iid) if iid else None
         ticker = (
             pos.get("ticker")
-            or (getattr(inst, 'symbol', None) if inst else None)
+            or getattr(inst, 'symbol', None)
             or f"ID:{iid or '?'}"
         )
         name = (
             pos.get("instrument_name")
-            or (getattr(inst, 'name', None) if inst else None)
+            or getattr(inst, 'name', None)
             or "—"
         )
         return ticker, name
