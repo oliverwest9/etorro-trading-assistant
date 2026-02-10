@@ -74,8 +74,19 @@ def upsert_instrument(db: SyncTemplate, instrument: Instrument) -> dict[str, Any
 
     logger.debug("instrument_upsert", etoro_id=instrument.instrument_id, symbol=instrument.symbol)
     result = db.upsert(record_id, data)
-    record = first_or_none(result) or data
-    return _normalise_instrument(record) or record
+    record = first_or_none(result)
+    if record is None:
+        logger.error(
+            "instrument_upsert_failed",
+            etoro_id=instrument.instrument_id,
+            symbol=instrument.symbol,
+            result=result,
+        )
+        raise RuntimeError(
+            f"Failed to upsert instrument {instrument.instrument_id} ({instrument.symbol}): "
+            "empty or invalid response from SurrealDB"
+        )
+    return _normalise_instrument(record)
 
 
 def upsert_instruments(db: SyncTemplate, instruments: list[Instrument]) -> list[dict[str, Any]]:
