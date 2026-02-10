@@ -31,7 +31,7 @@ def main() -> None:
         # Quick verification — query table list
         result = db.query("INFO FOR DB;")
         info = parse_info_result(result)
-        
+
         # INFO FOR DB returns a dict with a 'tables' key (among others)
         if "tables" in info:
             tables = info["tables"]
