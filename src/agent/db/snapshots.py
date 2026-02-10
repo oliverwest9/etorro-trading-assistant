@@ -83,7 +83,7 @@ def create_snapshot(
         logger.error(
             "snapshot_create_failed",
             run_type=run_type,
-            total_value=data["total_value"],
+            total_value=data.get("total_value"),
             raw_result=result,
         )
         raise RuntimeError("Failed to create portfolio snapshot in SurrealDB")
