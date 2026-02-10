@@ -4,7 +4,7 @@ All tests use in-memory SurrealDB — no Docker required.
 """
 
 from agent.config import Settings
-from agent.db.connection import get_connection
+from agent.db.connection import get_connection, parse_info_result
 from agent.db.schema import (
     EXPECTED_INDEXES,
     EXPECTED_TABLES,
@@ -37,15 +37,7 @@ def _test_settings() -> Settings:
 def _get_db_info(db: object) -> dict[str, object]:
     """Return the parsed INFO FOR DB result."""
     result = db.query("INFO FOR DB;")  # type: ignore[union-attr]
-    if isinstance(result, list) and len(result) > 0:
-        entry = result[0]
-        if isinstance(entry, dict) and "result" in entry:
-            return entry["result"]  # type: ignore[return-value]
-        if isinstance(entry, dict):
-            return entry
-    if isinstance(result, dict):
-        return result
-    return {}
+    return parse_info_result(result)
 
 
 # ---------------------------------------------------------------------------
@@ -80,16 +72,8 @@ def test_apply_schema_creates_all_indexes():
         info = _get_db_info(db)
         for table_name in _get_tables(info):
             table_info_result = db.query(f"INFO FOR TABLE {table_name};")
-            # The SDK may return a plain dict or a list-wrapped dict
-            if isinstance(table_info_result, dict):
-                table_info = table_info_result
-            elif isinstance(table_info_result, list) and len(table_info_result) > 0:
-                entry = table_info_result[0]
-                table_info = (
-                    entry.get("result", entry) if isinstance(entry, dict) else entry
-                )
-            else:
-                table_info = {}
+            # Normalize the result using the same utility
+            table_info = parse_info_result(table_info_result)
 
             if isinstance(table_info, dict):
                 indexes = table_info.get("indexes")

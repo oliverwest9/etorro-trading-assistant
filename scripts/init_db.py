@@ -10,7 +10,7 @@ Running this script a second time is safe — the schema is idempotent.
 """
 
 from agent.config import Settings
-from agent.db.connection import get_connection
+from agent.db.connection import get_connection, parse_info_result
 from agent.db.schema import apply_schema
 
 
@@ -30,9 +30,11 @@ def main() -> None:
 
         # Quick verification — query table list
         result = db.query("INFO FOR DB;")
+        info = parse_info_result(result)
+        
         # INFO FOR DB returns a dict with a 'tables' key (among others)
-        if isinstance(result, dict) and "tables" in result:
-            tables = result["tables"]
+        if "tables" in info:
+            tables = info["tables"]
             if isinstance(tables, dict):
                 print(f"  Tables created: {len(tables)}")
                 for name in sorted(tables.keys()):
