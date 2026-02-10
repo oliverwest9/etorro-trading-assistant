@@ -10,6 +10,7 @@ from ``get_connection()``.
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from typing import Any
 
 import structlog
@@ -53,6 +54,7 @@ def _instrument_to_record(instrument: Instrument) -> dict[str, Any]:
         "asset_class": instrument.asset_class,
         "exchange": str(instrument.exchange_id) if instrument.exchange_id is not None else None,
         "is_active": True,
+        "updated_at": datetime.now(timezone.utc),
     }
 
 

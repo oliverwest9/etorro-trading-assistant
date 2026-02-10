@@ -53,24 +53,34 @@ def bulk_insert_candles(
         count=len(candles),
     )
 
-    # Build a list of row objects for a single bulk INSERT.
-    rows: list[dict[str, Any]] = []
+    inserted: list[dict[str, Any]] = []
     for candle in candles:
-        rows.append(
+        result = db.query(
+            "INSERT INTO candle {"
+            "  instrument: type::thing('instrument', $etoro_id),"
+            "  timeframe: $timeframe,"
+            "  open: $open,"
+            "  high: $high,"
+            "  low: $low,"
+            "  close: $close,"
+            "  volume: $volume,"
+            "  timestamp: <datetime>$timestamp"
+            "};",
             {
-                "instrument": f"instrument:{instrument_etoro_id}",
+                "etoro_id": instrument_etoro_id,
                 "timeframe": timeframe,
                 "open": candle.open,
                 "high": candle.high,
                 "low": candle.low,
                 "close": candle.close,
                 "volume": candle.volume,
-                "timestamp": candle.timestamp,
-            }
+                "timestamp": candle.timestamp.isoformat(),
+            },
         )
+        row = first_or_none(result)
+        if row:
+            inserted.append(row)
 
-    result = db.query("INSERT INTO candle $data;", {"data": rows})
-    inserted: list[dict[str, Any]] = normalise_response(result)
     return inserted
 
 
