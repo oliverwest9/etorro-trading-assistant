@@ -226,18 +226,24 @@ def get_recommendations_for_report(
 def _to_record_id(id_str: str) -> RecordID:
     """Convert a ``"table:id"`` string into a ``RecordID``.
 
-    If the string contains a ``:``, it is split into table and id parts.
-    Otherwise it is returned as-is wrapped as a RecordID with the string
-    as the id and an empty table (which usually means the caller passed
-    something unexpected — this avoids a crash).
+    The input must be in ``table:id`` format. Both the table and id parts
+    must be non-empty; otherwise a ``ValueError`` is raised.
 
     Args:
         id_str: A record ID string like ``"report:abc123"``.
 
     Returns:
         A ``RecordID`` instance.
+
+    Raises:
+        ValueError: If ``id_str`` is not in ``table:id`` format or either
+            component is empty.
     """
-    if ":" in id_str:
-        table, key = id_str.split(":", 1)
-        return RecordID(table, key)
-    return RecordID(id_str, "")
+    if ":" not in id_str:
+        raise ValueError(f"Invalid record id format (expected 'table:id'): {id_str!r}")
+
+    table, key = id_str.split(":", 1)
+    if not table or not key:
+        raise ValueError(f"Invalid record id components in {id_str!r}: table={table!r}, id={key!r}")
+
+    return RecordID(table, key)
