@@ -40,6 +40,31 @@ def _get_db_info(db: object) -> dict[str, object]:
     return parse_info_result(result)
 
 
+def _assert_unique_index_violation(result: object, index_name: str) -> None:
+    """Assert that a query result is a unique index violation error.
+
+    SurrealDB returns constraint violations as error strings rather than
+    raising exceptions. This helper verifies the result is an error string
+    that indicates a unique index constraint violation.
+
+    Args:
+        result: The result from a db.query() call
+        index_name: The name of the index expected in the error message
+
+    Raises:
+        AssertionError: If the result is not a unique index error
+    """
+    assert isinstance(result, str), \
+        f"Expected error string from duplicate insert, got {type(result)}"
+    
+    result_lower = result.lower()
+    assert "database index" in result_lower and index_name.lower() in result_lower, \
+        f"Expected unique index error for '{index_name}', got: {result}"
+    
+    assert "already contains" in result_lower, \
+        f"Expected 'already contains' in error message, got: {result}"
+
+
 # ---------------------------------------------------------------------------
 # apply_schema tests
 # ---------------------------------------------------------------------------
@@ -165,8 +190,9 @@ def test_schema_candle_table_has_compound_index():
         """)
 
         # Inserting a duplicate (same instrument + timeframe + timestamp)
-        # should fail due to the unique index
-        duplicate_result = db.query("""
+        # should fail due to the unique index.
+        # SurrealDB returns errors as string messages rather than raising exceptions.
+        result = db.query("""
             CREATE candle SET
                 instrument = instrument:aapl,
                 timeframe = '1d',
@@ -177,13 +203,9 @@ def test_schema_candle_table_has_compound_index():
                 volume = 2000000.0,
                 timestamp = d'2024-01-15T00:00:00Z';
         """)
-        # SurrealDB returns an error string (not an exception) for constraint violations
-        assert isinstance(duplicate_result, str), (
-            f"Expected duplicate insert to return error string, got {type(duplicate_result)}"
-        )
-        assert "index" in duplicate_result.lower(), (
-            f"Expected error message to mention 'index', got: {duplicate_result}"
-        )
+
+        # Verify the result is an error string about the unique index constraint
+        _assert_unique_index_violation(result, "idx_candle_lookup")
 
         # Should still only have 1 candle
         result = db.query("SELECT * FROM candle;")
@@ -231,8 +253,9 @@ def test_schema_report_run_id_index_is_unique():
                 report_markdown = '# Test';
         """)
 
-        # Second report with same run_id should fail
-        duplicate_result = db.query("""
+        # Second report with same run_id should fail.
+        # SurrealDB returns errors as string messages rather than raising exceptions.
+        result = db.query("""
             CREATE report SET
                 run_id = 'run-001',
                 run_type = 'market_close',
@@ -242,13 +265,9 @@ def test_schema_report_run_id_index_is_unique():
                 summary = 'Dupe summary',
                 report_markdown = '# Dupe';
         """)
-        # SurrealDB returns an error string (not an exception) for constraint violations
-        assert isinstance(duplicate_result, str), (
-            f"Expected duplicate insert to return error string, got {type(duplicate_result)}"
-        )
-        assert "index" in duplicate_result.lower() and "run_id" in duplicate_result.lower(), (
-            f"Expected error message to mention 'index' and 'run_id', got: {duplicate_result}"
-        )
+
+        # Verify the result is an error string about the unique index constraint
+        _assert_unique_index_violation(result, "idx_run_id")
 
         result = db.query("SELECT * FROM report;")
         records = result if isinstance(result, list) else [result]
