@@ -121,6 +121,23 @@ def _generate_markdown_report(
         inst_map: Instrument lookup by ID, used as fallback when positions
                   lack ticker/name (e.g., if enrichment failed).
     """
+    
+    def _get_ticker_name(pos: dict) -> tuple[str, str]:
+        """Extract ticker and name from position, with inst_map fallback."""
+        iid = pos.get("instrument_id")
+        inst = inst_map.get(iid) if iid else None
+        ticker = (
+            pos.get("ticker")
+            or (getattr(inst, 'symbol', None) if inst else None)
+            or f"ID:{iid or '?'}"
+        )
+        name = (
+            pos.get("instrument_name")
+            or (getattr(inst, 'name', None) if inst else None)
+            or "—"
+        )
+        return ticker, name
+    
     lines: list[str] = []
     w = lines.append
 
@@ -166,11 +183,7 @@ def _generate_markdown_report(
 
         sorted_pos = sorted(positions, key=lambda p: p.get("ticker") or "ZZZ")
         for idx, pos in enumerate(sorted_pos, 1):
-            # Use inst_map as fallback if ticker/name missing from enrichment
-            iid = pos.get("instrument_id")
-            inst = inst_map.get(iid) if iid else None
-            ticker = pos.get("ticker") or (getattr(inst, 'symbol', None) if inst else None) or f"ID:{iid or '?'}"
-            name = pos.get("instrument_name") or (getattr(inst, 'name', None) if inst else None) or "—"
+            ticker, name = _get_ticker_name(pos)
             open_rate = pos.get("open_rate", 0)
             amount = pos.get("amount", 0)
             pnl_data = pos.get("unrealized_pnl", {})
@@ -207,10 +220,7 @@ def _generate_markdown_report(
             pnl = p.get("unrealized_pnl", {}).get("pnl", 0)
             if pnl <= 0:
                 break
-            iid = p.get("instrument_id")
-            inst = inst_map.get(iid) if iid else None
-            ticker = p.get("ticker") or (getattr(inst, 'symbol', None) if inst else None) or "?"
-            name = p.get("instrument_name") or (getattr(inst, 'name', None) if inst else None) or "—"
+            ticker, name = _get_ticker_name(p)
             w(f"- **{ticker}** ({name}) — +${pnl:,.2f}")
         w("")
 
@@ -221,10 +231,7 @@ def _generate_markdown_report(
                 continue
             amt = p.get("amount", 0)
             pct = (pnl / amt * 100) if amt > 0 else 0
-            iid = p.get("instrument_id")
-            inst = inst_map.get(iid) if iid else None
-            ticker = p.get("ticker") or (getattr(inst, 'symbol', None) if inst else None) or "?"
-            name = p.get("instrument_name") or (getattr(inst, 'name', None) if inst else None) or "—"
+            ticker, name = _get_ticker_name(p)
             w(f"- **{ticker}** ({name}) — -${abs(pnl):,.2f} ({pct:.1f}%)")
         w("")
 
