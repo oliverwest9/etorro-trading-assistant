@@ -22,7 +22,7 @@ from agent.etoro.models import Instrument
 logger = structlog.get_logger(__name__)
 
 # Fields defined as ``option<T>`` in the schema that the SDK may omit from
-# results when their value is NONE.  We normalise them to explicit ``None``
+# results when their value is ``None``.  We normalise them to explicit ``None``
 # so callers can reliably use ``record["field"]`` without KeyError.
 _OPTIONAL_FIELDS: dict[str, object] = {
     "exchange": None,
