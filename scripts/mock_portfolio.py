@@ -72,11 +72,9 @@ def create_mock_portfolio() -> PortfolioResponse:
         PositionWithPnl(
             **{
                 "unrealizedPnL": UnrealizedPnL(
-                    **{
-                        "pnL": 33.25,
-                        "closeRate": 160.00,
-                        "closeConversionRate": 1.0,
-                    }
+                    pnL=33.25,
+                    closeRate=160.00,
+                    closeConversionRate=1.0,
                 ),
                 "positionID": 2150896074,
                 "CID": 7765437,
@@ -130,13 +128,13 @@ def create_mock_trading_history() -> list[TradingHistoryItem]:
         TradingHistoryItem(
             netProfit=42.50,
             closeRate=155.30,
-            closeTimestamp="2024-07-15T14:30:00Z",
+            closeTimestamp=datetime(2024, 7, 15, 14, 30, 0, tzinfo=timezone.utc),
             positionId=2150000001,
             instrumentId=1001,
             isBuy=True,
             leverage=1,
             openRate=150.00,
-            openTimestamp="2024-06-01T09:00:00Z",
+            openTimestamp=datetime(2024, 6, 1, 9, 0, 0, tzinfo=timezone.utc),
             stopLossRate=145.00,
             takeProfitRate=160.00,
             trailingStopLoss=False,
