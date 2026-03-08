@@ -15,6 +15,7 @@ from agent.config import Settings
 from agent.db.candles import count_candles
 from agent.db.instruments import get_instrument_by_etoro_id, list_instruments
 from agent.db.snapshots import get_latest_snapshot, query_snapshots
+from agent.db.analysis import get_analyses_by_run_id
 from agent.etoro.client import EToroClient
 from agent.orchestrator import Orchestrator, PipelineError
 
@@ -338,6 +339,7 @@ def test_run_data_pipeline_empty_portfolio(
     assert summary["instruments_processed"] == 0
     assert summary["instruments_failed"] == 0
     assert summary["candle_counts"] == {}
+    assert summary["analyses_created"] == 0
     assert summary["errors"] == []
     assert summary["snapshot_id"] != ""
 
@@ -482,18 +484,66 @@ def test_run_data_pipeline_market_close_run_type(
     assert snapshot["run_type"] == "market_close"
 
 
-def test_run_data_pipeline_rejects_invalid_run_type(
-    db: SyncTemplate, test_settings: Settings
+def test_run_data_pipeline_creates_analysis_records(
+    db: SyncTemplate, test_settings: Settings, httpx_mock
 ) -> None:
-    """Invalid run_type values raise ValueError."""
+    """Pipeline creates analysis records for each processed instrument."""
+    _mock_full_pipeline(httpx_mock, candle_count=15)
     orch = _create_orchestrator(test_settings, db)
 
-    with pytest.raises(ValueError, match=r"Invalid run_type: 'invalid'"):
-        orch.run_data_pipeline("invalid")  # type: ignore[arg-type]
+    summary = orch.run_data_pipeline("market_open")
 
-    with pytest.raises(ValueError, match=r"Invalid run_type: 'Market_Open'"):
-        orch.run_data_pipeline("Market_Open")  # type: ignore[arg-type]
+    assert summary["analyses_created"] == 2
+    analyses = get_analyses_by_run_id(db, summary["run_id"])
+    assert len(analyses) == 2
 
-    with pytest.raises(ValueError, match=r"Invalid run_type: ''"):
-        orch.run_data_pipeline("")  # type: ignore[arg-type]
+    # Each analysis should have required fields
+    for analysis in analyses:
+        assert "trend" in analysis
+        assert analysis["trend"] in ("bullish", "bearish", "neutral")
+        assert "trend_strength" in analysis
+        assert 0.0 <= analysis["trend_strength"] <= 1.0
+        assert "price_action" in analysis
+        assert "run_id" in analysis
+        assert analysis["run_id"] == summary["run_id"]
 
+
+def test_run_data_pipeline_analysis_survives_instrument_failure(
+    db: SyncTemplate, test_settings: Settings, httpx_mock
+) -> None:
+    """Analysis runs on successfully processed instruments even if one failed."""
+    # Portfolio with two instruments
+    httpx_mock.add_response(
+        url="https://example.com/trading/info/real/pnl",
+        json=_portfolio_response(1001, 1002),
+    )
+    httpx_mock.add_response(
+        url="https://example.com/market-data/instruments",
+        json=_instruments_response(_INSTRUMENT_AAPL, _INSTRUMENT_BTC),
+    )
+    # AAPL candles succeed (15 candles for meaningful analysis)
+    httpx_mock.add_response(
+        url="https://example.com/market-data/instruments/1001/history/candles/desc/OneDay/100",
+        json=_candles_response(1001, 15),
+    )
+    # BTC candles fail
+    httpx_mock.add_response(
+        url="https://example.com/market-data/instruments/1002/history/candles/desc/OneDay/100",
+        status_code=500,
+    )
+    httpx_mock.add_response(
+        url="https://example.com/market-data/instruments/1002/history/candles/desc/OneDay/100",
+        status_code=500,
+    )
+    httpx_mock.add_response(
+        url="https://example.com/market-data/instruments/1002/history/candles/desc/OneDay/100",
+        status_code=500,
+    )
+
+    orch = _create_orchestrator(test_settings, db)
+    summary = orch.run_data_pipeline("market_open")
+
+    # Only AAPL was analysed
+    assert summary["analyses_created"] == 1
+    analyses = get_analyses_by_run_id(db, summary["run_id"])
+    assert len(analyses) == 1

@@ -74,9 +74,9 @@ DEFINE FIELD OVERWRITE instrument      ON analysis TYPE record<instrument>;
 DEFINE FIELD OVERWRITE run_id          ON analysis TYPE string;
 DEFINE FIELD OVERWRITE trend           ON analysis TYPE string;
 DEFINE FIELD OVERWRITE trend_strength  ON analysis TYPE float;
-DEFINE FIELD OVERWRITE price_action    ON analysis TYPE object;
-DEFINE FIELD OVERWRITE sector_context  ON analysis TYPE option<object>;
-DEFINE FIELD OVERWRITE raw_data        ON analysis TYPE object;
+DEFINE FIELD OVERWRITE price_action    ON analysis FLEXIBLE TYPE object;
+DEFINE FIELD OVERWRITE sector_context  ON analysis FLEXIBLE TYPE option<object>;
+DEFINE FIELD OVERWRITE raw_data        ON analysis FLEXIBLE TYPE object;
 DEFINE FIELD OVERWRITE created_at      ON analysis TYPE datetime          DEFAULT time::now();
 
 -- ============================================================
