@@ -38,6 +38,7 @@ from agent.etoro.client import EToroClient, EToroError
 from agent.etoro.market_data import get_candles
 from agent.etoro.models import Instrument, InstrumentSearchResponse
 from agent.etoro.portfolio import get_portfolio
+from agent.types import RunType
 
 logger = structlog.get_logger(__name__)
 
@@ -152,7 +153,15 @@ class Orchestrator:
 
         Raises:
             PipelineError: If the portfolio fetch fails (fatal).
+            ValueError: If ``run_type`` is not a valid value.
         """
+        # Validate run_type at runtime
+        if run_type not in ("market_open", "market_close"):
+            raise ValueError(
+                f"Invalid run_type: {run_type!r}. "
+                'Must be "market_open" or "market_close".'
+            )
+
         # ---- Step 1: Init ----
         run_id = str(uuid.uuid4())
         logger.info("pipeline_start", run_id=run_id, run_type=run_type)

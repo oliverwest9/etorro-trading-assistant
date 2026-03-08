@@ -114,7 +114,30 @@ def main():
 def _generate_markdown_report(
     output: dict, inst_map: dict[int, Instrument]
 ) -> str:
-    """Generate a human-readable markdown report from portfolio data."""
+    """Generate a human-readable markdown report from portfolio data.
+    
+    Args:
+        output: Portfolio snapshot data with positions and trading history.
+        inst_map: Instrument lookup by ID, used as fallback when positions
+                  lack ticker/name (e.g., if enrichment failed).
+    """
+    
+    def _get_ticker_name(pos: dict) -> tuple[str, str]:
+        """Extract ticker and name from position, with inst_map fallback."""
+        iid = pos.get("instrument_id")
+        inst = inst_map.get(iid) if iid else None
+        ticker = (
+            pos.get("ticker")
+            or getattr(inst, 'symbol', None)
+            or f"ID:{iid or '?'}"
+        )
+        name = (
+            pos.get("instrument_name")
+            or getattr(inst, 'name', None)
+            or "—"
+        )
+        return ticker, name
+    
     lines: list[str] = []
     w = lines.append
 
@@ -160,8 +183,7 @@ def _generate_markdown_report(
 
         sorted_pos = sorted(positions, key=lambda p: p.get("ticker") or "ZZZ")
         for idx, pos in enumerate(sorted_pos, 1):
-            ticker = pos.get("ticker") or f"ID:{pos.get('instrument_id', '?')}"
-            name = pos.get("instrument_name") or "—"
+            ticker, name = _get_ticker_name(pos)
             open_rate = pos.get("open_rate", 0)
             amount = pos.get("amount", 0)
             pnl_data = pos.get("unrealized_pnl", {})
@@ -198,7 +220,8 @@ def _generate_markdown_report(
             pnl = p.get("unrealized_pnl", {}).get("pnl", 0)
             if pnl <= 0:
                 break
-            w(f"- **{p.get('ticker', '?')}** ({p.get('instrument_name', '—')}) — +${pnl:,.2f}")
+            ticker, name = _get_ticker_name(p)
+            w(f"- **{ticker}** ({name}) — +${pnl:,.2f}")
         w("")
 
         w("### Top Losers")
@@ -208,7 +231,8 @@ def _generate_markdown_report(
                 continue
             amt = p.get("amount", 0)
             pct = (pnl / amt * 100) if amt > 0 else 0
-            w(f"- **{p.get('ticker', '?')}** ({p.get('instrument_name', '—')}) — -${abs(pnl):,.2f} ({pct:.1f}%)")
+            ticker, name = _get_ticker_name(p)
+            w(f"- **{ticker}** ({name}) — -${abs(pnl):,.2f} ({pct:.1f}%)")
         w("")
 
     # Trading history
