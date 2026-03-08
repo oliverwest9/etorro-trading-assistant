@@ -110,21 +110,24 @@ def query_candles(
         "timeframe": timeframe,
     }
 
-    sql = (
+    # NOTE: SurrealDB v2.3.x has a bug where combining multiple indexed
+    # fields in a single WHERE clause returns empty results.  Work around
+    # it by filtering instrument in a subquery and timeframe in the outer.
+    inner = (
         "SELECT * FROM candle "
-        "WHERE instrument = type::thing('instrument', $etoro_id) "
-        "AND timeframe = $timeframe"
+        "WHERE instrument = type::thing('instrument', $etoro_id)"
     )
+    outer_filters = "timeframe = $timeframe"
 
     if start is not None:
-        sql += " AND timestamp >= <datetime>$start"
+        outer_filters += " AND timestamp >= <datetime>$start"
         params["start"] = start.isoformat()
 
     if end is not None:
-        sql += " AND timestamp <= <datetime>$end"
+        outer_filters += " AND timestamp <= <datetime>$end"
         params["end"] = end.isoformat()
 
-    sql += " ORDER BY timestamp ASC;"
+    sql = f"SELECT * FROM ({inner}) WHERE {outer_filters} ORDER BY timestamp ASC;"
 
     result = db.query(sql, params)
     return normalise_response(result)
@@ -145,10 +148,12 @@ def count_candles(
     Returns:
         Integer count of matching candle records.
     """
+    # NOTE: SurrealDB v2.3.x compound-index bug — use subquery to
+    # avoid combining instrument + timeframe in the same WHERE clause.
     result = db.query(
-        "SELECT count() AS total FROM candle "
-        "WHERE instrument = type::thing('instrument', $etoro_id) "
-        "AND timeframe = $timeframe "
+        "SELECT count() AS total FROM "
+        "(SELECT * FROM candle WHERE instrument = type::thing('instrument', $etoro_id)) "
+        "WHERE timeframe = $timeframe "
         "GROUP ALL;",
         {"etoro_id": instrument_etoro_id, "timeframe": timeframe},
     )

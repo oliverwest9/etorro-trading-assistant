@@ -174,9 +174,9 @@ DEFINE FIELD instrument      ON analysis TYPE record<instrument>;
 DEFINE FIELD run_id          ON analysis TYPE string;           -- groups all analyses from one run
 DEFINE FIELD trend           ON analysis TYPE string;           -- bullish, bearish, neutral
 DEFINE FIELD trend_strength  ON analysis TYPE float;            -- 0.0 to 1.0
-DEFINE FIELD price_action    ON analysis TYPE object;           -- key price levels, patterns
-DEFINE FIELD sector_context  ON analysis TYPE option<object>;   -- sector performance, rotation
-DEFINE FIELD raw_data        ON analysis TYPE object;           -- snapshot of input data used
+DEFINE FIELD price_action    ON analysis FLEXIBLE TYPE object;           -- key price levels, patterns
+DEFINE FIELD sector_context  ON analysis FLEXIBLE TYPE option<object>;   -- sector performance, rotation
+DEFINE FIELD raw_data        ON analysis FLEXIBLE TYPE object;           -- snapshot of input data used
 DEFINE FIELD created_at      ON analysis TYPE datetime          DEFAULT time::now();
 
 -- ============================================================
@@ -513,28 +513,59 @@ Each step is designed to be independently testable before moving on. We start wi
 - **Manual verification**: run `scripts/run_pipeline.py`, query SurrealDB to confirm data is stored correctly
 
 **Acceptance Criteria:**
-- [ ] `Orchestrator.run_data_pipeline()` executes steps 1-3 of the run pipeline (init, fetch portfolio, fetch market data)
-- [ ] Portfolio is fetched first and a snapshot is saved to SurrealDB
-- [ ] Instrument IDs are extracted from portfolio positions and resolved via the instruments API
-- [ ] Instruments are upserted in SurrealDB with metadata from the API
-- [ ] OHLCV candles are fetched for each portfolio instrument and stored in SurrealDB
-- [ ] A failed instrument fetch does not abort the entire pipeline — errors are logged and returned in the summary
-- [ ] An empty portfolio (no positions) completes without error
-- [ ] Integration tests with mocked eToro API confirm data flows end-to-end
-- [ ] `scripts/run_pipeline.py` runs the pipeline with real credentials and prints a summary
+- [x] `Orchestrator.run_data_pipeline()` executes steps 1-3 of the run pipeline (init, fetch portfolio, fetch market data)
+- [x] Portfolio is fetched first and a snapshot is saved to SurrealDB
+- [x] Instrument IDs are extracted from portfolio positions and resolved via the instruments API
+- [x] Instruments are upserted in SurrealDB with metadata from the API
+- [x] OHLCV candles are fetched for each portfolio instrument and stored in SurrealDB
+- [x] A failed instrument fetch does not abort the entire pipeline — errors are logged and returned in the summary
+- [x] An empty portfolio (no positions) completes without error
+- [x] Integration tests with mocked eToro API confirm data flows end-to-end
+- [x] `scripts/run_pipeline.py` runs the pipeline with real credentials and prints a summary
 
 ### Step 8: Analysis Engine
-- Implement `analysis/price_action.py`: trend detection (higher highs/lows, moving average direction), momentum (rate of change), key price levels
-- Implement `analysis/sector.py`: group instruments by sector/asset class, compare relative performance
-- Write tests with known price data and expected analysis results
-- **Manual verification**: analyse a few instruments, manually verify trend assessments make sense
+
+Build a modular, extensible analysis engine that evaluates per-instrument price action and groups results by market/exchange.
+
+**Architecture:**
+
+```
+analysis/
+  types.py             — Typed dataclasses: IndicatorResult, PriceActionResult, SectorGroupResult, AnalysisResult
+  registry.py          — Indicator protocol + IndicatorRegistry (register / run_all / run)
+  indicators/
+    __init__.py         — Registers built-in indicators on import
+    trend.py            — TrendIndicator: higher-highs/lows pattern detection
+    momentum.py         — MomentumIndicator: rate-of-change over configurable window
+    levels.py           — LevelsIndicator: recent swing high/low support & resistance
+  price_action.py      — analyse_price_action(): converts candle dicts → DataFrame, runs registry, aggregates
+  sector.py            — analyse_sector(): groups instruments by exchange, computes per-group avg return
+db/
+  analysis.py          — create_analysis(), get_analyses_by_run_id(), get_analysis_for_instrument()
+```
+
+**Design Decisions:**
+- **Indicator Protocol + Registry** — new indicators are added by implementing a 2-method protocol (`name` property, `analyse(df) → IndicatorResult`) and calling `registry.register()`
+- **Pure functions** — every analysis function takes data in and returns typed results; zero API or DB calls
+- **pandas DataFrame** — candle lists are converted to DataFrames once at the `price_action` boundary; indicators receive DataFrames
+- **Exchange-based grouping** — sector analysis groups by eToro `exchange_id`: US ("5"/"33"), UK ("7"), EU ("38"), Crypto ("8"), Other
+- **Orchestrator wiring** — Step 4 added to `run_data_pipeline()` after candle ingestion; results persisted via `db/analysis.py`
 
 **Acceptance Criteria:**
-- [ ] `analyse_price_action(candles)` returns trend direction (bullish/bearish/neutral), trend strength (0-1), key support/resistance levels, and momentum assessment
-- [ ] `analyse_sector(instruments, candles)` groups instruments by asset class/sector and compares relative performance
-- [ ] Analysis functions are pure (take data in, return results) with no API or DB calls
-- [ ] Tests use fixed candle data with known trends and verify correct classification
-- [ ] Manual test on 3+ real instruments produces sensible assessments
+- [x] `IndicatorResult` dataclass has `name`, `signal` (bullish/bearish/neutral), `strength` (0.0–1.0), `details` (dict)
+- [x] `IndicatorRegistry` supports `register(indicator)`, `run_all(df)`, `run(name, df)` and is iterable
+- [x] Three built-in indicators registered on import: `trend`, `momentum`, `levels`
+- [x] `analyse_price_action(candles)` returns `PriceActionResult` with trend, strength, support/resistance, momentum, and per-indicator results
+- [x] `analyse_sector(instruments, candle_map)` returns `SectorResult` grouping instruments by exchange with per-group average return
+- [x] All analysis functions are pure — no API or DB calls inside them
+- [x] `db/analysis.py` provides `create_analysis()`, `get_analyses_by_run_id()`, `get_analysis_for_instrument()`
+- [x] Orchestrator `run_data_pipeline()` includes Step 4: analyse each instrument and persist results
+- [x] Pipeline summary dict includes `analyses_created` count
+- [x] New indicators can be added without modifying existing code (open/closed principle)
+- [x] Tests use synthetic candle data with known trends and verify correct classification
+- [x] Tests verify registry extension (register a custom indicator, confirm it runs)
+- [x] DB tests use in-memory SurrealDB and verify CRUD round-trips
+- [x] `scripts/run_pipeline.py` report includes analysis results section
 
 ### Step 9: LLM Commentary
 - Implement `reporting/llm.py`: send structured analysis data to LLM, receive natural language commentary
@@ -758,8 +789,8 @@ Each row maps to a discrete PR. Complete and merge each PR before starting the n
 | #6 | eToro API client - portfolio | Step 4 | `etoro/portfolio.py`, portfolio response models, mocked tests | Done |
 | #7 | SurrealDB connection & schema | Step 5 | `db/connection.py`, `db/schema.py`, `scripts/init_db.py`, schema tests | Done |
 | #8 | SurrealDB data layer | Step 6 | `db/utils.py`, `db/instruments.py`, `db/candles.py`, `db/snapshots.py`, `db/reports.py`, CRUD tests | Done |
-| TBD | End-to-end data pipeline | Step 7 | `orchestrator.py` (data fetch + store), `scripts/run_pipeline.py`, integration tests | In Progress |
-| TBD | Analysis engine | Step 8 | `analysis/price_action.py`, `analysis/sector.py`, analysis tests | Not Started |
+| TBD | End-to-end data pipeline | Step 7 | `orchestrator.py` (data fetch + store), `scripts/run_pipeline.py`, integration tests | Done |
+| TBD | Analysis engine | Step 8 | `analysis/types.py`, `analysis/registry.py`, `analysis/indicators/`, `analysis/price_action.py`, `analysis/sector.py`, `db/analysis.py`, orchestrator Step 4, analysis tests | Done |
 | TBD | LLM commentary | Step 9 | `reporting/llm.py`, prompt design, structured output parsing, mocked tests | Not Started |
 | TBD | Report generation & output | Step 10 | `reporting/generator.py`, `reporting/formatter.py`, full pipeline wiring, report tests | Not Started |
 | TBD | CLI & run logging | Step 11 | `main.py` CLI, `run_log` lifecycle, structured logging, CLI tests | Not Started |

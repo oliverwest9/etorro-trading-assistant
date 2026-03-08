@@ -22,6 +22,7 @@ from io import StringIO
 from pathlib import Path
 
 from agent.config import get_settings
+from agent.db.analysis import get_analyses_by_run_id
 from agent.db.candles import count_candles
 from agent.db.instruments import list_instruments
 from agent.db.schema import EXPECTED_TABLES
@@ -83,6 +84,7 @@ def main() -> None:
         _log(f"- **Snapshot ID:** `{summary['snapshot_id']}`")
         _log(f"- **Instruments processed:** {summary['instruments_processed']}")
         _log(f"- **Instruments failed:** {summary['instruments_failed']}")
+        _log(f"- **Analyses created:** {summary.get('analyses_created', 0)}")
         _log("")
 
         if summary["candle_counts"]:
@@ -127,6 +129,42 @@ def main() -> None:
                     f"| {inst.get('asset_class', '?')} "
                     f"| {inst.get('exchange', '—') or '—'} "
                     f"| {total} |"
+                )
+            _log("")
+
+        # ---- Analysis results ----
+        analyses = get_analyses_by_run_id(orch.db, summary["run_id"])
+        if analyses:
+            # Build a symbol lookup from instruments
+            inst_lookup: dict[str, str] = {}
+            for inst in instruments:
+                inst_lookup[str(inst.get("id", ""))] = inst.get("symbol", "?")
+
+            _log("## Analysis Results\n")
+            _log("| Symbol | Trend | Strength | Support | Resistance | Momentum |")
+            _log("|---|---|---:|---:|---:|---|")
+            for analysis in analyses:
+                # Resolve instrument symbol from the record ID
+                inst_ref = analysis.get("instrument", "")
+                symbol = inst_lookup.get(str(inst_ref), str(inst_ref))
+
+                trend = analysis.get("trend", "?")
+                strength = analysis.get("trend_strength", 0.0)
+                pa = analysis.get("price_action", {})
+                support = pa.get("support")
+                resistance = pa.get("resistance")
+                momentum = pa.get("momentum_signal", "?")
+
+                support_str = f"{support:.2f}" if support is not None else "—"
+                resistance_str = f"{resistance:.2f}" if resistance is not None else "—"
+
+                _log(
+                    f"| {symbol} "
+                    f"| {trend} "
+                    f"| {strength:.2f} "
+                    f"| {support_str} "
+                    f"| {resistance_str} "
+                    f"| {momentum} |"
                 )
             _log("")
 

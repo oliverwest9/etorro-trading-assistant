@@ -30,6 +30,11 @@ from agent.db.reports import (
     get_report_by_run_id,
     query_reports,
 )
+from agent.db.analysis import (
+    create_analysis,
+    get_analyses_by_run_id,
+    get_analysis_for_instrument,
+)
 
 __all__ = [
     # Connection & schema
@@ -64,4 +69,8 @@ __all__ = [
     "get_recommendations_for_report",
     "get_report_by_run_id",
     "query_reports",
+    # Analysis
+    "create_analysis",
+    "get_analyses_by_run_id",
+    "get_analysis_for_instrument",
 ]
