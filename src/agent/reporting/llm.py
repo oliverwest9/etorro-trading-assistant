@@ -16,15 +16,12 @@ Layers 1–2 require no API key and can be used to inspect payloads.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 import structlog
 from pydantic import BaseModel, Field
 
 from agent.config import Settings
-
-if TYPE_CHECKING:
-    from agent.analysis.types import CritiqueResult
 
 logger = structlog.get_logger(__name__)
 
@@ -103,38 +100,6 @@ class SectorOverview:
 
 
 @dataclass(frozen=True)
-class RiskOverview:
-    """Per-instrument risk summary for the LLM prompt."""
-
-    symbol: str
-    volatility_pct: float
-    max_drawdown_pct: float
-    risk_adjusted_return: float
-
-
-@dataclass(frozen=True)
-class CritiqueSummary:
-    """Portfolio-level critique data for inclusion in the LLM prompt.
-
-    Built from a ``CritiqueResult`` by ``build_commentary_request()``.
-    """
-
-    portfolio_return_pct: float
-    inflation_target_pct: float
-    beats_inflation: bool
-    return_vs_inflation_pct: float
-    portfolio_volatility_pct: float
-    portfolio_sharpe: float
-    diversification_rating: str
-    herfindahl_index: float
-    top_position_symbol: str
-    top_position_pct: float
-    cash_allocation_pct: float
-    risk_overviews: list[RiskOverview] = field(default_factory=list)
-    suggestions: list[str] = field(default_factory=list)
-
-
-@dataclass(frozen=True)
 class CommentaryRequest:
     """All data needed to generate LLM commentary.
 
@@ -149,7 +114,6 @@ class CommentaryRequest:
     total_pnl: float
     positions: list[PositionData] = field(default_factory=list)
     sectors: list[SectorOverview] = field(default_factory=list)
-    critique: CritiqueSummary | None = None
 
 
 # =====================================================================
@@ -163,7 +127,6 @@ def build_commentary_request(
     snapshot: dict[str, Any],
     analyses: list[dict[str, Any]],
     instrument_map: dict[int, dict[str, Any]],
-    critique: CritiqueResult | None = None,
 ) -> CommentaryRequest:
     """Assemble a ``CommentaryRequest`` from pipeline data.
 
@@ -181,9 +144,6 @@ def build_commentary_request(
             ``price_action``, ``sector_context``).
         instrument_map: Mapping of eToro instrument ID → instrument dict
             (keys: ``etoro_id``, ``symbol``, ``name``).
-        critique: Optional ``CritiqueResult`` from the financial analyst
-            critic.  When provided, its data is summarised and included
-            in the prompt to the LLM.
 
     Returns:
         A fully populated ``CommentaryRequest``.
@@ -240,9 +200,6 @@ def build_commentary_request(
                 avg_return_pct=sc.get("avg_return_pct", 0.0),
             )
 
-    # Build critique summary (if a CritiqueResult was provided)
-    critique_summary = _build_critique_summary(critique) if critique else None
-
     return CommentaryRequest(
         run_type=run_type,
         total_value=snapshot.get("total_value", 0.0),
@@ -251,7 +208,6 @@ def build_commentary_request(
         total_pnl=snapshot.get("total_pnl", 0.0),
         positions=positions,
         sectors=sorted(seen_groups.values(), key=lambda s: s.group_name),
-        critique=critique_summary,
     )
 
 
@@ -294,78 +250,25 @@ def _extract_pnl(position: dict[str, Any]) -> float | None:
     return None
 
 
-def _build_critique_summary(critique: CritiqueResult) -> CritiqueSummary:
-    """Convert a ``CritiqueResult`` into a ``CritiqueSummary`` for the prompt."""
-    risk_overviews = [
-        RiskOverview(
-            symbol=rm.symbol,
-            volatility_pct=rm.daily_volatility_pct,
-            max_drawdown_pct=rm.max_drawdown_pct,
-            risk_adjusted_return=rm.risk_adjusted_return,
-        )
-        for rm in critique.risk_metrics
-    ]
-    div = critique.diversification
-    return CritiqueSummary(
-        portfolio_return_pct=critique.portfolio_return_pct,
-        inflation_target_pct=critique.inflation_target_pct,
-        beats_inflation=critique.beats_inflation,
-        return_vs_inflation_pct=critique.return_vs_inflation_pct,
-        portfolio_volatility_pct=critique.portfolio_volatility_pct,
-        portfolio_sharpe=critique.portfolio_sharpe,
-        diversification_rating=div.rating,
-        herfindahl_index=div.herfindahl_index,
-        top_position_symbol=div.top_position_symbol,
-        top_position_pct=div.top_position_pct,
-        cash_allocation_pct=critique.cash_allocation_pct,
-        risk_overviews=risk_overviews,
-        suggestions=list(critique.suggestions),
-    )
-
-
 # =====================================================================
 # Prompt formatting (pure function)
 # =====================================================================
 
 SYSTEM_PROMPT = """\
-You are a senior financial analyst and portfolio critic advising on an \
-eToro portfolio. Your primary objective is to help the investor beat \
-inflation over the long term through responsible, evidence-based decisions. \
-You have been given the current portfolio state, technical analysis data \
-for each position, and a quantitative portfolio critique with risk metrics.
-
-Your job is to:
+You are an experienced trading advisor analysing an eToro portfolio. \
+You have been given the current portfolio state and technical analysis \
+data for each position. Your job is to:
 
 1. Provide a one-line summary headline of current market conditions.
 2. Write a market context paragraph covering broader trends relevant \
 to the positions held.
 3. For each position, write a brief commentary assessing its current \
-state based on the technical data and risk metrics provided.
+state based on the technical data provided.
 4. For each position, provide a specific recommendation (buy, sell, \
 hold, reduce, or increase) with a conviction level (high, medium, low) \
-and clear reasoning referencing the technical and risk data.
+and clear reasoning referencing the technical data.
 
-Financial analyst principles — always apply these:
-- **Long-term focus**: prioritise sustainable growth over short-term \
-gains. The goal is to outpace inflation, not to chase momentum.
-- **Risk awareness**: factor in volatility, maximum drawdown, and \
-risk-adjusted returns when making recommendations. High returns are \
-meaningless if they come with portfolio-destroying risk.
-- **Diversification**: flag concentration risk. A well-diversified \
-portfolio across sectors and geographies is more resilient.
-- **Capital preservation**: avoid recommending aggressive buys when \
-drawdowns are severe or volatility is extreme.
-- **Inflation benchmark**: explicitly compare portfolio performance \
-against the inflation target. If the portfolio is underperforming \
-inflation, recommend corrective action.
-- **Position sizing**: flag any position that dominates the portfolio. \
-No single holding should risk the overall strategy.
-- **Cash management**: too much cash is a drag on returns; too little \
-leaves no dry powder for opportunities.
-- **Evidence-based**: reference actual numbers — price levels, \
-support/resistance, volatility percentages, Sharpe ratios, drawdowns.
-
-Additional guidelines:
+Guidelines:
 - Be specific — reference actual price levels, support/resistance, \
 and trend data from the analysis.
 - This is advisory only — you are not executing trades.
@@ -438,44 +341,6 @@ def format_prompt(request: CommentaryRequest) -> str:
                 if p.sector_avg_return_pct is not None:
                     sector_line += f" (group avg return: {p.sector_avg_return_pct:+.2f}%)"
                 lines.append(sector_line)
-            lines.append("")
-
-    # Portfolio critique (financial analyst assessment)
-    if request.critique:
-        c = request.critique
-        lines.append("## Financial Analyst Critique")
-        lines.append("")
-        lines.append(f"- Portfolio return: {c.portfolio_return_pct:+.2f}%")
-        lines.append(f"- Inflation target: {c.inflation_target_pct:.1f}%")
-        status = "BEATING" if c.beats_inflation else "BELOW"
-        lines.append(
-            f"- Inflation status: **{status}** "
-            f"(excess: {c.return_vs_inflation_pct:+.2f}pp)"
-        )
-        lines.append(f"- Portfolio volatility (annualised): {c.portfolio_volatility_pct:.2f}%")
-        lines.append(f"- Portfolio Sharpe ratio: {c.portfolio_sharpe:.2f}")
-        lines.append(f"- Cash allocation: {c.cash_allocation_pct:.1f}%")
-        lines.append(
-            f"- Diversification: {c.diversification_rating} "
-            f"(HHI: {c.herfindahl_index:.2f}, top position: "
-            f"{c.top_position_symbol} at {c.top_position_pct:.1f}%)"
-        )
-        lines.append("")
-
-        if c.risk_overviews:
-            lines.append("### Per-Position Risk")
-            for ro in c.risk_overviews:
-                lines.append(
-                    f"- **{ro.symbol}**: vol {ro.volatility_pct:.1f}%, "
-                    f"max DD {ro.max_drawdown_pct:.1f}%, "
-                    f"risk-adj return {ro.risk_adjusted_return:.2f}"
-                )
-            lines.append("")
-
-        if c.suggestions:
-            lines.append("### Analyst Suggestions")
-            for idx, s in enumerate(c.suggestions, 1):
-                lines.append(f"{idx}. {s}")
             lines.append("")
 
     return "\n".join(lines)
