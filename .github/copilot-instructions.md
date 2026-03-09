@@ -73,8 +73,14 @@ docker-compose up -d
 **Running tests:**
 
 ```bash
-# Run all tests (takes ~2-3 seconds)
+# Run all tests (unit + integration)
 pytest
+
+# Run unit tests only
+pytest -m "not integration"
+
+# Run integration / E2E tests only
+pytest -m integration
 
 # Run specific test file
 pytest tests/test_smoke.py
@@ -92,9 +98,12 @@ pytest --cov=agent
 - All new functionality must have tests - this is non-negotiable
 - Test files must be named `test_*.py` and placed in `tests/` directory
 
-**Current test status:**
-- Basic smoke test exists (`test_smoke.py`) that verifies package imports
-- Test infrastructure is minimal - more tests will be added as features are implemented
+**Integration / E2E tests:**
+- E2E tests live in `tests/test_e2e.py` and are marked with `@pytest.mark.integration`
+- They exercise the full pipeline (portfolio → instruments → candles → analysis → commentary → report)
+- **Always run integration tests** (`pytest -m integration` or the full `pytest`) after any code change to verify the pipeline still works end-to-end
+- **Do NOT modify `tests/test_e2e.py` without explicit permission** — if an integration test fails, fix the implementation code, not the test
+- E2E tests should only be updated if absolutely necessary and with explicit owner approval
 
 ## Code Style & Conventions
 
@@ -152,6 +161,8 @@ pytest --cov=agent
 - Do not modify the SurrealDB schema without updating `PLAN.md` section 3
 - Do not create new top-level directories without explicit instruction
 - Do not create documentation files beyond what exists (PLAN.md, AGENTS.md, README.md)
+- **Do NOT modify `tests/test_e2e.py` (E2E / integration tests) without explicit permission** — fix the implementation code instead if a test fails
+- Always verify integration tests pass (`pytest -m integration`) after any code change
 
 **Development constraints:**
 - Do not jump ahead in the roadmap (see `PLAN.md` section 7)

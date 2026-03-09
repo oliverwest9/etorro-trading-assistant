@@ -48,6 +48,24 @@ Follow the roadmap steps in `PLAN.md` section 7. Each step should be completed a
 - Use descriptive test names: `test_client_sets_auth_headers`, not `test_client_1`
 - Run `pytest` after any code change to verify nothing is broken
 
+### Integration / E2E Tests
+
+End-to-end integration tests live in `tests/test_e2e.py` and are marked with `@pytest.mark.integration`. They exercise the full pipeline (portfolio → instruments → candles → analysis → commentary → report) with mocked HTTP and in-memory SurrealDB.
+
+**Running tests:**
+
+```bash
+pytest                       # all tests (unit + integration)
+pytest -m integration        # integration / E2E tests only
+pytest -m "not integration"  # unit tests only
+```
+
+**Rules for agents:**
+
+1. **Always verify integration tests pass.** After any code change, run the full test suite (`pytest`) or at minimum `pytest -m integration` to confirm the E2E tests still pass. A PR must not be opened or updated if integration tests are failing.
+2. **Do NOT modify `tests/test_e2e.py` without explicit permission.** E2E tests define the expected end-to-end behaviour of the system. If an integration test fails, fix the implementation code — not the test.
+3. **E2E tests should only be updated if absolutely necessary** and only when the owner has explicitly approved the change. Acceptable reasons include: a new pipeline stage that requires E2E coverage, or a deliberate change to the pipeline's observable behaviour.
+
 ### eToro API
 
 - All requests must include the three required headers: `x-request-id` (UUID v4), `x-api-key`, `x-user-key`
@@ -107,6 +125,7 @@ Do not create new top-level directories or reorganise the structure without expl
 - Do not create documentation files beyond what already exists (PLAN.md, AGENTS.md)
 - Do not skip writing tests for any new functionality
 - **Do NOT edit unit tests to make them pass** - fix the implementation code instead. Tests define the expected behaviour; if a test fails, the implementation is wrong, not the test.
+- **Do NOT edit `tests/test_e2e.py` (E2E / integration tests) without explicit permission** - these tests are the source of truth for end-to-end pipeline behaviour. If an integration test fails, fix the implementation, not the test.
 
 ## Work Tracker
 
