@@ -27,7 +27,7 @@ from surrealdb.connections.sync_template import SyncTemplate
 from agent.analysis.critic import critique_portfolio
 from agent.analysis.price_action import analyse_price_action
 from agent.analysis.sector import analyse_sector
-from agent.analysis.types import AnalysisResult
+from agent.analysis.types import AnalysisResult, CritiqueResult
 from agent.config import Settings
 from agent.db.analysis import create_analysis, get_analyses_by_run_id
 from agent.db.candles import bulk_insert_candles, query_candles
@@ -614,7 +614,7 @@ class Orchestrator:
         self,
         snapshot: dict[str, Any],
         instrument_map: dict[int, Instrument],
-    ) -> Any:
+    ) -> CritiqueResult | None:
         """Run the financial analyst critique on the current portfolio.
 
         Queries candles from the DB and delegates to

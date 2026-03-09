@@ -16,12 +16,15 @@ Layers 1–2 require no API key and can be used to inspect payloads.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import structlog
 from pydantic import BaseModel, Field
 
 from agent.config import Settings
+
+if TYPE_CHECKING:
+    from agent.analysis.types import CritiqueResult
 
 logger = structlog.get_logger(__name__)
 
@@ -160,7 +163,7 @@ def build_commentary_request(
     snapshot: dict[str, Any],
     analyses: list[dict[str, Any]],
     instrument_map: dict[int, dict[str, Any]],
-    critique: Any | None = None,
+    critique: CritiqueResult | None = None,
 ) -> CommentaryRequest:
     """Assemble a ``CommentaryRequest`` from pipeline data.
 
@@ -291,7 +294,7 @@ def _extract_pnl(position: dict[str, Any]) -> float | None:
     return None
 
 
-def _build_critique_summary(critique: Any) -> CritiqueSummary:
+def _build_critique_summary(critique: CritiqueResult) -> CritiqueSummary:
     """Convert a ``CritiqueResult`` into a ``CritiqueSummary`` for the prompt."""
     risk_overviews = [
         RiskOverview(
@@ -300,23 +303,23 @@ def _build_critique_summary(critique: Any) -> CritiqueSummary:
             max_drawdown_pct=rm.max_drawdown_pct,
             risk_adjusted_return=rm.risk_adjusted_return,
         )
-        for rm in getattr(critique, "risk_metrics", [])
+        for rm in critique.risk_metrics
     ]
-    div = getattr(critique, "diversification", None)
+    div = critique.diversification
     return CritiqueSummary(
-        portfolio_return_pct=getattr(critique, "portfolio_return_pct", 0.0),
-        inflation_target_pct=getattr(critique, "inflation_target_pct", 0.0),
-        beats_inflation=getattr(critique, "beats_inflation", False),
-        return_vs_inflation_pct=getattr(critique, "return_vs_inflation_pct", 0.0),
-        portfolio_volatility_pct=getattr(critique, "portfolio_volatility_pct", 0.0),
-        portfolio_sharpe=getattr(critique, "portfolio_sharpe", 0.0),
-        diversification_rating=div.rating if div else "unknown",
-        herfindahl_index=div.herfindahl_index if div else 0.0,
-        top_position_symbol=div.top_position_symbol if div else "N/A",
-        top_position_pct=div.top_position_pct if div else 0.0,
-        cash_allocation_pct=getattr(critique, "cash_allocation_pct", 0.0),
+        portfolio_return_pct=critique.portfolio_return_pct,
+        inflation_target_pct=critique.inflation_target_pct,
+        beats_inflation=critique.beats_inflation,
+        return_vs_inflation_pct=critique.return_vs_inflation_pct,
+        portfolio_volatility_pct=critique.portfolio_volatility_pct,
+        portfolio_sharpe=critique.portfolio_sharpe,
+        diversification_rating=div.rating,
+        herfindahl_index=div.herfindahl_index,
+        top_position_symbol=div.top_position_symbol,
+        top_position_pct=div.top_position_pct,
+        cash_allocation_pct=critique.cash_allocation_pct,
         risk_overviews=risk_overviews,
-        suggestions=list(getattr(critique, "suggestions", [])),
+        suggestions=list(critique.suggestions),
     )
 
 
