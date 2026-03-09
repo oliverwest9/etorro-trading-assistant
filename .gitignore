@@ -210,6 +210,4 @@ __marimo__/
 reports/*
 !reports/.gitkeep
 
-# Temp files
-tmpclaude-*
-nul
+
