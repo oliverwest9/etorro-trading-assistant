@@ -36,6 +36,18 @@ from agent.db.analysis import (
     get_analyses_by_run_id,
     get_analysis_for_instrument,
 )
+from agent.db.run_log import (
+    complete_run_log,
+    create_run_log,
+    fail_run_log,
+    get_run_log,
+    query_run_logs,
+)
+from agent.db.config import (
+    delete_config,
+    get_config,
+    set_config,
+)
 
 __all__ = [
     # Connection & schema
@@ -75,4 +87,14 @@ __all__ = [
     "create_analysis",
     "get_analyses_by_run_id",
     "get_analysis_for_instrument",
+    # Run log
+    "complete_run_log",
+    "create_run_log",
+    "fail_run_log",
+    "get_run_log",
+    "query_run_logs",
+    # Config
+    "delete_config",
+    "get_config",
+    "set_config",
 ]

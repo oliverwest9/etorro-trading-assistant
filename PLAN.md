@@ -944,8 +944,8 @@ Each row maps to a discrete PR. Complete and merge each PR before starting the n
 | TBD | Analysis engine | Step 8 | `analysis/types.py`, `analysis/registry.py`, `analysis/indicators/`, `analysis/price_action.py`, `analysis/sector.py`, `db/analysis.py`, orchestrator Step 4, analysis tests | Done |
 | TBD | LLM commentary | Step 9 | `reporting/llm.py`, prompt design, structured output parsing, orchestrator Step 5 wiring, mocked tests | Done |
 | TBD | Report generation & output | Step 10 | `reporting/generator.py`, `reporting/formatter.py`, full pipeline wiring, report tests | Done |
-| TBD | CLI & run logging | Step 11 | `main.py` CLI, `run_log` lifecycle, structured logging, CLI tests | Not Started |
-| TBD | Polish & hardening | Step 12 | Error handling, partial runs, config table, `backfill_candles.py`, test review | Not Started |
+| TBD | CLI & run logging | Step 11 | `main.py` CLI, `run_log` lifecycle, structured logging, CLI tests | Done |
+| TBD | Polish & hardening | Step 12 | Error handling, partial runs, config table, `backfill_candles.py`, test review | Done |
 | TBD | LangChain/LangGraph agent migration | Step 13 | LangGraph agent, tool wrappers, SurrealDB memory, agent tests | Not Started |
 | TBD | Telegram bot integration | Step 14 | `telegram/bot.py`, `telegram/formatter.py`, report push notifications, Telegram tests | Not Started |
 | TBD | Fully agentic conversational platform | Step 15 | `agent/skills/`, `agent/mcp/`, `conversational.py`, Telegram message handling, MCP server, skill tests | Not Started |
