@@ -17,6 +17,7 @@ agent run:
 
 from __future__ import annotations
 
+import time
 import uuid
 from typing import Any
 
@@ -33,6 +34,7 @@ from agent.db.candles import bulk_insert_candles, query_candles
 from agent.db.connection import get_connection
 from agent.db.instruments import list_instruments, upsert_instrument
 from agent.db.reports import create_report, create_recommendation
+from agent.db.run_log import complete_run_log, create_run_log, fail_run_log
 from agent.db.schema import apply_schema
 from agent.db.snapshots import create_snapshot
 from agent.etoro.client import EToroClient, EToroError
@@ -176,6 +178,10 @@ class Orchestrator:
         # ---- Step 1: Init ----
         run_id = str(uuid.uuid4())
         logger.info("pipeline_start", run_id=run_id, run_type=run_type)
+        t0 = time.perf_counter()
+
+        # Create run_log with status='started'
+        create_run_log(self.db, run_id=run_id, run_type=run_type)
 
         errors: list[dict[str, Any]] = []
 
@@ -184,6 +190,13 @@ class Orchestrator:
             portfolio_resp = get_portfolio(self.client)
         except EToroError as exc:
             logger.error("portfolio_fetch_failed", error=str(exc))
+            duration_ms = int((time.perf_counter() - t0) * 1000)
+            fail_run_log(
+                self.db,
+                run_id=run_id,
+                errors=[{"step": "portfolio", "error": str(exc)}],
+                duration_ms=duration_ms,
+            )
             raise PipelineError(f"Portfolio fetch failed: {exc}") from exc
 
         portfolio = portfolio_resp.client_portfolio
@@ -213,6 +226,15 @@ class Orchestrator:
                 "errors": [],
             }
             empty_summary["report"] = generate_report(empty_summary, self.db)
+            duration_ms = int((time.perf_counter() - t0) * 1000)
+            complete_run_log(
+                self.db,
+                run_id=run_id,
+                instruments_analysed=0,
+                recommendations_made=0,
+                duration_ms=duration_ms,
+            )
+            empty_summary["duration_ms"] = duration_ms
             return empty_summary
 
         # ---- Step 3: Fetch market data ----
@@ -287,6 +309,20 @@ class Orchestrator:
 
         # ---- Step 6: Assemble Report ----
         summary["report"] = generate_report(summary, self.db)
+
+        # ---- Finalise run_log ----
+        duration_ms = int((time.perf_counter() - t0) * 1000)
+        recommendations_made = 0
+        if commentary_result and "recommendations" in commentary_result:
+            recommendations_made = len(commentary_result["recommendations"])
+        complete_run_log(
+            self.db,
+            run_id=run_id,
+            instruments_analysed=len(instruments_processed),
+            recommendations_made=recommendations_made,
+            duration_ms=duration_ms,
+        )
+        summary["duration_ms"] = duration_ms
 
         logger.info("pipeline_complete", **summary)
         return summary

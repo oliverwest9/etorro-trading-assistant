@@ -20,6 +20,9 @@ dependencies = [
     "rich>=13.0",
 ]
 
+[project.scripts]
+etoro-agent = "agent.main:cli"
+
 [project.optional-dependencies]
 dev = [
     "pytest>=8.0",

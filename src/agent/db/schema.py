@@ -126,7 +126,7 @@ DEFINE FIELD OVERWRITE completed_at    ON run_log TYPE option<datetime>;
 -- ============================================================
 DEFINE TABLE OVERWRITE config SCHEMAFULL;
 DEFINE FIELD OVERWRITE key             ON config TYPE string;
-DEFINE FIELD OVERWRITE value           ON config TYPE object;
+DEFINE FIELD OVERWRITE value           ON config FLEXIBLE TYPE object;
 DEFINE FIELD OVERWRITE updated_at      ON config TYPE datetime            DEFAULT time::now();
 DEFINE INDEX OVERWRITE idx_config_key  ON config FIELDS key               UNIQUE;
 """
