@@ -24,6 +24,7 @@ import structlog
 from pydantic import ValidationError
 from surrealdb.connections.sync_template import SyncTemplate
 
+from agent.analysis.critic import critique_portfolio
 from agent.analysis.price_action import analyse_price_action
 from agent.analysis.sector import analyse_sector
 from agent.analysis.types import AnalysisResult
@@ -475,11 +476,17 @@ class Orchestrator:
             enriched_analyses.append(enriched)
 
         try:
+            # Run the financial analyst critique
+            critique = self._run_critique(
+                snapshot=snapshot,
+                instrument_map=instrument_map,
+            )
             request = build_commentary_request(
                 run_type=run_type,
                 snapshot=snapshot,
                 analyses=enriched_analyses,
                 instrument_map=inst_map_plain,
+                critique=critique,
             )
             response = generate_commentary(request, self._settings)
         except Exception as exc:
@@ -602,6 +609,68 @@ class Orchestrator:
             lines.append("")
 
         return "\n".join(lines)
+
+    def _run_critique(
+        self,
+        snapshot: dict[str, Any],
+        instrument_map: dict[int, Instrument],
+    ) -> Any:
+        """Run the financial analyst critique on the current portfolio.
+
+        Queries candles from the DB and delegates to
+        ``critique_portfolio()`` which is a pure function.
+
+        Returns:
+            A ``CritiqueResult``, or ``None`` if the critique fails.
+        """
+        try:
+            positions = snapshot.get("positions", [])
+            instrument_ids = sorted({
+                pos.get("instrument_id", pos.get("instrumentID", 0))
+                for pos in positions
+            })
+
+            # Build candle map from DB
+            candle_map: dict[int, list[dict[str, Any]]] = {}
+            for iid in instrument_ids:
+                try:
+                    candle_map[iid] = query_candles(self.db, iid, "1d")
+                except Exception:
+                    candle_map[iid] = []
+
+            # Build plain instrument map and sector map
+            inst_map_plain: dict[int, dict[str, Any]] = {}
+            sector_map: dict[int, str] = {}
+            for iid, inst in instrument_map.items():
+                inst_map_plain[iid] = {
+                    "etoro_id": inst.instrument_id,
+                    "symbol": inst.symbol,
+                    "name": inst.name,
+                }
+                if inst.exchange_id is not None:
+                    from agent.analysis.sector import EXCHANGE_GROUPS, DEFAULT_GROUP
+                    sector_map[iid] = EXCHANGE_GROUPS.get(
+                        str(inst.exchange_id), DEFAULT_GROUP
+                    )
+
+            result = critique_portfolio(
+                snapshot=snapshot,
+                candle_map=candle_map,
+                instrument_map=inst_map_plain,
+                sector_map=sector_map,
+            )
+
+            logger.info(
+                "critique_complete",
+                portfolio_return=result.portfolio_return_pct,
+                beats_inflation=result.beats_inflation,
+                diversification=result.diversification.rating,
+                suggestions=len(result.suggestions),
+            )
+            return result
+        except Exception as exc:
+            logger.warning("critique_failed", error=str(exc))
+            return None
 
     def _resolve_instruments(
         self, instrument_ids: list[int]
