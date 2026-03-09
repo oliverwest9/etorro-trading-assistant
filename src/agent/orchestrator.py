@@ -12,6 +12,7 @@ agent run:
    persist results to the ``analysis`` table
 5. **Commentary** — send portfolio + analysis data to the LLM,
    persist the report and recommendations to the DB
+6. **Report** — assemble a ``Report`` object from pipeline data
 """
 
 from __future__ import annotations
@@ -38,6 +39,7 @@ from agent.etoro.client import EToroClient, EToroError
 from agent.etoro.market_data import get_candles
 from agent.etoro.models import Instrument, InstrumentSearchResponse
 from agent.etoro.portfolio import get_portfolio
+from agent.reporting.generator import Report, generate_report
 from agent.reporting.llm import (
     CommentaryResponse,
     build_commentary_request,
@@ -141,13 +143,14 @@ class Orchestrator:
     # ------------------------------------------------------------------
 
     def run_data_pipeline(self, run_type: str) -> dict[str, Any]:
-        """Execute steps 1–5 of the agent run pipeline.
+        """Execute steps 1–6 of the agent run pipeline.
 
         1. **Init** — generate ``run_id``
         2. **Fetch portfolio** — save snapshot, extract instrument IDs
         3. **Fetch market data** — resolve instruments, fetch candles
         4. **Analyse** — run indicators, sector grouping, persist results
         5. **Commentary** — generate LLM commentary, persist report
+        6. **Report** — assemble a ``Report`` object from pipeline data
 
         Args:
             run_type: ``"market_open"`` or ``"market_close"``.
@@ -156,7 +159,7 @@ class Orchestrator:
             A summary dict with keys: ``run_id``, ``run_type``,
             ``snapshot_id``, ``instruments_processed``,
             ``instruments_failed``, ``candle_counts``,
-            ``analyses_created``, ``commentary``, ``report_id``,
+            ``analyses_created``, ``commentary``, ``report``,
             ``errors``.
 
         Raises:
@@ -198,7 +201,7 @@ class Orchestrator:
 
         if not instrument_ids:
             logger.warning("no_instruments_in_portfolio")
-            return {
+            empty_summary: dict[str, Any] = {
                 "run_id": run_id,
                 "run_type": run_type,
                 "snapshot_id": snapshot_id,
@@ -209,6 +212,8 @@ class Orchestrator:
                 "commentary": None,
                 "errors": [],
             }
+            empty_summary["report"] = generate_report(empty_summary, self.db)
+            return empty_summary
 
         # ---- Step 3: Fetch market data ----
         # Resolve instrument metadata (single API call for the full catalog)
@@ -279,6 +284,9 @@ class Orchestrator:
             "commentary": commentary_result,
             "errors": errors,
         }
+
+        # ---- Step 6: Assemble Report ----
+        summary["report"] = generate_report(summary, self.db)
 
         logger.info("pipeline_complete", **summary)
         return summary

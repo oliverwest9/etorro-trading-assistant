@@ -42,7 +42,8 @@ def _portfolio_to_record(
     ]
 
     total_pnl = portfolio.unrealized_pnl or 0.0
-    total_value = portfolio.credit + total_pnl
+    invested = sum(pos.amount for pos in portfolio.positions)
+    total_value = portfolio.credit + invested + total_pnl
 
     return {
         "total_value": total_value,

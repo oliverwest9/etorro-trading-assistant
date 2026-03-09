@@ -8,6 +8,7 @@ from agent.db.reports import (
     create_recommendation,
     create_report,
     get_latest_report,
+    get_previous_report,
     get_recommendations_for_report,
     get_report_by_run_id,
     query_reports,
@@ -289,3 +290,47 @@ def test_get_recommendations_empty(db: SyncTemplate) -> None:
 
     recs = get_recommendations_for_report(db, report_id)
     assert recs == []
+
+
+# ---------------------------------------------------------------------------
+# get_previous_report
+# ---------------------------------------------------------------------------
+
+
+def test_get_previous_report_returns_second_most_recent(db: SyncTemplate) -> None:
+    """get_previous_report returns the latest report excluding the current run."""
+    snapshot_id = _seed_snapshot(db)
+    create_report(
+        db, run_id="old-run", run_type="market_open",
+        snapshot_id=snapshot_id, commentary="old", summary="old",
+        report_markdown="old", recommendations=[{"symbol": "AAPL", "action": "hold", "conviction": "medium", "reasoning": "Stable."}],
+    )
+    create_report(
+        db, run_id="current-run", run_type="market_close",
+        snapshot_id=snapshot_id, commentary="current", summary="current",
+        report_markdown="current",
+    )
+
+    prev = get_previous_report(db, current_run_id="current-run")
+    assert prev is not None
+    assert prev["run_id"] == "old-run"
+    assert prev["recommendations"][0]["symbol"] == "AAPL"
+
+
+def test_get_previous_report_returns_none_when_only_current(db: SyncTemplate) -> None:
+    """Returns None when only the current report exists."""
+    snapshot_id = _seed_snapshot(db)
+    create_report(
+        db, run_id="only-run", run_type="market_open",
+        snapshot_id=snapshot_id, commentary="c", summary="s",
+        report_markdown="m",
+    )
+
+    prev = get_previous_report(db, current_run_id="only-run")
+    assert prev is None
+
+
+def test_get_previous_report_returns_none_when_empty(db: SyncTemplate) -> None:
+    """Returns None when no reports exist at all."""
+    prev = get_previous_report(db, current_run_id="any")
+    assert prev is None
