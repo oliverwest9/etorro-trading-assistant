@@ -18,6 +18,8 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from unittest.mock import patch
 
+from typing import Generator
+
 import pytest
 from surrealdb.connections.sync_template import SyncTemplate
 
@@ -237,12 +239,14 @@ def _mock_full_pipeline(
         )
 
 
-def _make_orchestrator(
+@pytest.fixture()
+def orch(
     test_settings: Settings, db: SyncTemplate
-) -> Orchestrator:
+) -> Generator[Orchestrator, None, None]:
+    """Provide an Orchestrator with managed client lifecycle."""
     client = EToroClient(test_settings)
-    client.__enter__()
-    return Orchestrator(test_settings, client=client, db=db)
+    with client:
+        yield Orchestrator(test_settings, client=client, db=db)
 
 
 # ===================================================================
@@ -254,12 +258,11 @@ class TestFullHappyPath:
     """Full pipeline run with mocked API + LLM — verify all DB state."""
 
     def test_complete_pipeline_with_commentary(
-        self, db: SyncTemplate, test_settings: Settings, httpx_mock
+        self, orch: Orchestrator, db: SyncTemplate, test_settings: Settings, httpx_mock
     ) -> None:
         """Run the entire pipeline and verify every layer of persisted data."""
         _mock_full_pipeline(httpx_mock)
         test_settings.llm_api_key = "test-key"
-        orch = _make_orchestrator(test_settings, db)
 
         mock_resp = _mock_commentary(instrument_ids=(1001, 1002))
         with patch(
@@ -328,11 +331,10 @@ class TestConsecutiveRuns:
     """Simulate two daily runs and validate cumulative DB state."""
 
     def test_market_open_then_close_accumulates_state(
-        self, db: SyncTemplate, test_settings: Settings, httpx_mock
+        self, orch: Orchestrator, db: SyncTemplate, test_settings: Settings, httpx_mock
     ) -> None:
         """Two consecutive runs produce independent snapshots and reports."""
         test_settings.llm_api_key = "test-key"
-        orch = _make_orchestrator(test_settings, db)
 
         # ---- Run 1: market_open ----
         _mock_full_pipeline(httpx_mock, instrument_ids=(1001, 1002))
@@ -379,10 +381,9 @@ class TestConsecutiveRuns:
         assert len(analyses_2) == 2
 
     def test_portfolio_changes_between_runs(
-        self, db: SyncTemplate, test_settings: Settings, httpx_mock
+        self, orch: Orchestrator, db: SyncTemplate, test_settings: Settings, httpx_mock
     ) -> None:
         """A new instrument appearing in run 2 is tracked correctly."""
-        orch = _make_orchestrator(test_settings, db)
 
         # Run 1: only AAPL
         _mock_full_pipeline(httpx_mock, instrument_ids=(1001,))
@@ -410,7 +411,7 @@ class TestGracefulDegradation:
     """Verify the pipeline degrades gracefully under partial failures."""
 
     def test_instrument_failure_does_not_block_others(
-        self, db: SyncTemplate, test_settings: Settings, httpx_mock
+        self, orch: Orchestrator, db: SyncTemplate, test_settings: Settings, httpx_mock
     ) -> None:
         """One instrument failing candles still allows the rest to complete."""
         # Portfolio with two instruments
@@ -434,7 +435,6 @@ class TestGracefulDegradation:
                 status_code=500,
             )
 
-        orch = _make_orchestrator(test_settings, db)
         summary = orch.run_data_pipeline("market_open")
 
         assert summary["instruments_processed"] == 1
@@ -453,12 +453,11 @@ class TestGracefulDegradation:
         assert summary["analyses_created"] == 1
 
     def test_llm_failure_still_produces_analysis(
-        self, db: SyncTemplate, test_settings: Settings, httpx_mock
+        self, orch: Orchestrator, db: SyncTemplate, test_settings: Settings, httpx_mock
     ) -> None:
         """An LLM failure does not prevent analysis from being persisted."""
         _mock_full_pipeline(httpx_mock)
         test_settings.llm_api_key = "test-key"
-        orch = _make_orchestrator(test_settings, db)
 
         with patch(
             "agent.orchestrator.generate_commentary",
@@ -481,7 +480,7 @@ class TestGracefulDegradation:
         assert len(llm_errors) == 1
 
     def test_portfolio_failure_is_fatal(
-        self, db: SyncTemplate, test_settings: Settings, httpx_mock
+        self, orch: Orchestrator, db: SyncTemplate, test_settings: Settings, httpx_mock
     ) -> None:
         """Portfolio fetch failure raises PipelineError and persists nothing."""
         for _ in range(3):
@@ -489,8 +488,6 @@ class TestGracefulDegradation:
                 url=f"{BASE}/trading/info/real/pnl",
                 status_code=500,
             )
-
-        orch = _make_orchestrator(test_settings, db)
 
         with pytest.raises(PipelineError, match="Portfolio fetch failed"):
             orch.run_data_pipeline("market_open")
@@ -500,7 +497,7 @@ class TestGracefulDegradation:
         assert len(list_instruments(db)) == 0
 
     def test_instrument_catalog_failure_still_stores_candles(
-        self, db: SyncTemplate, test_settings: Settings, httpx_mock
+        self, orch: Orchestrator, db: SyncTemplate, test_settings: Settings, httpx_mock
     ) -> None:
         """If instrument resolution fails, candles are still fetched and stored."""
         httpx_mock.add_response(
@@ -519,7 +516,6 @@ class TestGracefulDegradation:
             json=_candles_response(1001),
         )
 
-        orch = _make_orchestrator(test_settings, db)
         summary = orch.run_data_pipeline("market_open")
 
         # Candles were stored even without instrument metadata
@@ -534,7 +530,7 @@ class TestEmptyAndEdgeCases:
     """Edge cases: empty portfolio, single instrument, invalid config."""
 
     def test_empty_portfolio_produces_snapshot_only(
-        self, db: SyncTemplate, test_settings: Settings, httpx_mock
+        self, orch: Orchestrator, db: SyncTemplate, test_settings: Settings, httpx_mock
     ) -> None:
         """An empty portfolio creates a snapshot but no instruments or analyses."""
         httpx_mock.add_response(
@@ -542,7 +538,6 @@ class TestEmptyAndEdgeCases:
             json=_empty_portfolio_response(),
         )
 
-        orch = _make_orchestrator(test_settings, db)
         summary = orch.run_data_pipeline("market_open")
 
         assert summary["instruments_processed"] == 0
@@ -558,12 +553,11 @@ class TestEmptyAndEdgeCases:
         assert len(list_instruments(db)) == 0
 
     def test_single_instrument_pipeline(
-        self, db: SyncTemplate, test_settings: Settings, httpx_mock
+        self, orch: Orchestrator, db: SyncTemplate, test_settings: Settings, httpx_mock
     ) -> None:
         """Pipeline works correctly with a single-instrument portfolio."""
         _mock_full_pipeline(httpx_mock, instrument_ids=(1001,))
         test_settings.llm_api_key = "test-key"
-        orch = _make_orchestrator(test_settings, db)
 
         mock_resp = _mock_commentary(instrument_ids=(1001,))
         with patch(
@@ -579,10 +573,9 @@ class TestEmptyAndEdgeCases:
         assert summary["commentary"]["recommendations"][0]["symbol"] == "AAPL"
 
     def test_invalid_run_type_raises(
-        self, db: SyncTemplate, test_settings: Settings
+        self, orch: Orchestrator, db: SyncTemplate, test_settings: Settings
     ) -> None:
         """An invalid run_type is rejected before any API calls."""
-        orch = _make_orchestrator(test_settings, db)
 
         with pytest.raises(ValueError, match="Invalid run_type"):
             orch.run_data_pipeline("invalid_type")
@@ -592,12 +585,11 @@ class TestDataIntegrity:
     """Verify cross-table referential consistency after a full run."""
 
     def test_report_references_valid_snapshot(
-        self, db: SyncTemplate, test_settings: Settings, httpx_mock
+        self, orch: Orchestrator, db: SyncTemplate, test_settings: Settings, httpx_mock
     ) -> None:
         """The report's portfolio_snapshot FK points to an existing snapshot."""
         _mock_full_pipeline(httpx_mock)
         test_settings.llm_api_key = "test-key"
-        orch = _make_orchestrator(test_settings, db)
 
         mock_resp = _mock_commentary()
         with patch(
@@ -618,11 +610,10 @@ class TestDataIntegrity:
         assert str(snapshot["id"]) == snapshot_id
 
     def test_analyses_match_stored_candle_data(
-        self, db: SyncTemplate, test_settings: Settings, httpx_mock
+        self, orch: Orchestrator, db: SyncTemplate, test_settings: Settings, httpx_mock
     ) -> None:
         """Analyses are based on candle data that is actually in the DB."""
         _mock_full_pipeline(httpx_mock, candle_count=20)
-        orch = _make_orchestrator(test_settings, db)
 
         summary = orch.run_data_pipeline("market_open")
 
@@ -636,12 +627,11 @@ class TestDataIntegrity:
         assert len(analyses) == 2
 
     def test_recommendations_reference_valid_analyses(
-        self, db: SyncTemplate, test_settings: Settings, httpx_mock
+        self, orch: Orchestrator, db: SyncTemplate, test_settings: Settings, httpx_mock
     ) -> None:
         """Each recommendation's analysis FK points to an existing analysis."""
         _mock_full_pipeline(httpx_mock)
         test_settings.llm_api_key = "test-key"
-        orch = _make_orchestrator(test_settings, db)
 
         mock_resp = _mock_commentary()
         with patch(
@@ -659,12 +649,11 @@ class TestDataIntegrity:
             assert rec["analysis"] is not None
 
     def test_run_id_consistent_across_all_records(
-        self, db: SyncTemplate, test_settings: Settings, httpx_mock
+        self, orch: Orchestrator, db: SyncTemplate, test_settings: Settings, httpx_mock
     ) -> None:
         """The same run_id links snapshot, analyses, and report."""
         _mock_full_pipeline(httpx_mock)
         test_settings.llm_api_key = "test-key"
-        orch = _make_orchestrator(test_settings, db)
 
         mock_resp = _mock_commentary()
         with patch(
@@ -699,21 +688,7 @@ class TestContextManager:
             json=_empty_portfolio_response(),
         )
 
-        settings = Settings(
-            etoro_api_key="test-api-key",
-            etoro_user_key="test-user-key",
-            etoro_base_url=BASE,
-            surreal_url="memory",
-            surreal_namespace="test_ns",
-            surreal_database="test_db",
-            surreal_user="root",
-            surreal_pass="root",
-            llm_provider="gemini",
-            llm_api_key="",
-            llm_model="gemini-2.0-flash",
-        )
-
-        with Orchestrator(settings) as orch:
+        with Orchestrator(test_settings) as orch:
             summary = orch.run_data_pipeline("market_open")
             assert summary["snapshot_id"] != ""
             assert summary["instruments_processed"] == 0

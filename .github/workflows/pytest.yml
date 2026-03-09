@@ -18,8 +18,8 @@ permissions:
 jobs:
   # -----------------------------------------------------------------
   # Unit + integration tests
-  # All external calls (eToro API, LLM) are mocked; SurrealDB runs
-  # in-memory — no Docker or external services needed.
+  # All external calls (eToro API, LLM) are mocked; SurrealDB uses
+  # an in-memory backend — no Docker or external services needed.
   #
   # To block PR merges on failure, add a branch-protection rule for
   # the 'main' branch that requires the "tests" status check to pass:
