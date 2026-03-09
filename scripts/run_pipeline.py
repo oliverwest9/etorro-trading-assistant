@@ -3,261 +3,55 @@
 
 Usage::
 
-    python scripts/run_pipeline.py [market_open|market_close]
+    python scripts/run_pipeline.py [market_open|market_close] [--verbose]
 
 Loads settings from ``.env``, connects to SurrealDB, ensures the schema
 is applied, then runs the full data pipeline (portfolio fetch → instrument
-resolution → candle fetch → store everything in SurrealDB).
+resolution → candle fetch → analysis → LLM commentary → report).
 
-After the pipeline completes, queries SurrealDB to show detailed state
-(table counts, stored instruments, candle coverage, snapshot details)
-and saves a timestamped report to ``reports/``.
+Prints a ``rich`` formatted report to the terminal and saves a timestamped
+markdown file to ``reports/``.
 """
 
 from __future__ import annotations
 
 import sys
 from datetime import datetime, timezone
-from io import StringIO
 from pathlib import Path
 
 from agent.config import get_settings
-from agent.db.analysis import get_analyses_by_run_id
-from agent.db.candles import count_candles
-from agent.db.instruments import list_instruments
-from agent.db.schema import EXPECTED_TABLES
-from agent.db.snapshots import get_latest_snapshot, query_snapshots
-from agent.db.utils import normalise_response
 from agent.orchestrator import Orchestrator
-
-# Output goes to both stdout and a buffer for the report file
-_buffer = StringIO()
-
-
-def _log(msg: str = "") -> None:
-    """Print to stdout and capture in the report buffer."""
-    print(msg)
-    _buffer.write(msg + "\n")
-
-
-def _table_counts(orch: Orchestrator) -> dict[str, int]:
-    """Query row counts for every schema table."""
-    counts: dict[str, int] = {}
-    for table in sorted(EXPECTED_TABLES):
-        result = orch.db.query(f"SELECT count() AS total FROM {table} GROUP ALL;")
-        rows = normalise_response(result)
-        if rows and isinstance(rows[0], dict):
-            counts[table] = int(rows[0].get("total", 0))
-        else:
-            counts[table] = 0
-    return counts
+from agent.reporting import format_markdown, format_terminal
 
 
 def main() -> None:
-    run_type = sys.argv[1] if len(sys.argv) > 1 else "market_open"
+    # Parse arguments (simple — proper CLI comes in Step 11)
+    args = [a for a in sys.argv[1:] if not a.startswith("--")]
+    flags = {a for a in sys.argv[1:] if a.startswith("--")}
+    verbose = "--verbose" in flags
+
+    run_type = args[0] if args else "market_open"
     if run_type not in ("market_open", "market_close"):
         print(f"Invalid run_type: {run_type!r}. Use 'market_open' or 'market_close'.")
         sys.exit(1)
 
     settings = get_settings()
-    ts = datetime.now(tz=timezone.utc)
-    ts_label = ts.strftime("%Y-%m-%d_%H%M%S")
-
-    _log(f"# eToro Data Pipeline Report — {ts.strftime('%Y-%m-%d %H:%M:%S UTC')}")
-    _log(f"Run type: `{run_type}`\n")
+    ts_label = datetime.now(tz=timezone.utc).strftime("%Y-%m-%d_%H%M%S")
 
     with Orchestrator(settings) as orch:
-        # ---- SurrealDB state BEFORE pipeline ----
-        _log("## SurrealDB State — Before Pipeline\n")
-        before = _table_counts(orch)
-        _log("| Table | Rows |")
-        _log("|---|---:|")
-        for table, count in before.items():
-            _log(f"| {table} | {count} |")
-        _log("")
-
-        # ---- Run pipeline ----
-        _log("## Pipeline Execution\n")
-        _log("Running data pipeline...")
         summary = orch.run_data_pipeline(run_type)
-        _log(f"- **Run ID:** `{summary['run_id']}`")
-        _log(f"- **Snapshot ID:** `{summary['snapshot_id']}`")
-        _log(f"- **Instruments processed:** {summary['instruments_processed']}")
-        _log(f"- **Instruments failed:** {summary['instruments_failed']}")
-        _log(f"- **Analyses created:** {summary.get('analyses_created', 0)}")
-        _log("")
+        report = summary["report"]
 
-        if summary["candle_counts"]:
-            _log("### Candles Inserted This Run\n")
-            _log("| Instrument ID | Candles Inserted |")
-            _log("|---:|---:|")
-            for iid, count in sorted(summary["candle_counts"].items()):
-                _log(f"| {iid} | {count} |")
-            _log("")
+        # Rich terminal output
+        format_terminal(report, verbose=verbose)
 
-        if summary["errors"]:
-            _log("### Errors\n")
-            for err in summary["errors"]:
-                if "instrument_id" in err:
-                    _log(f"- Instrument {err['instrument_id']}: `{err['error']}`")
-                else:
-                    _log(f"- {err.get('step', 'unknown')}: `{err['error']}`")
-            _log("")
-
-        # ---- LLM Commentary ----
-        commentary = summary.get("commentary")
-        if commentary:
-            _log("## LLM Commentary\n")
-            _log(f"**{commentary['summary']}**\n")
-            _log(commentary["market_context"])
-            _log("")
-
-            if commentary.get("position_commentaries"):
-                _log("### Position Analysis\n")
-                for pc in commentary["position_commentaries"]:
-                    _log(f"**{pc['symbol']}**: {pc['commentary']}\n")
-
-            if commentary.get("recommendations"):
-                _log("### Recommendations\n")
-                _log("| Symbol | Action | Conviction | Reasoning |")
-                _log("|---|---|---|---|")
-                for r in commentary["recommendations"]:
-                    _log(
-                        f"| {r['symbol']} "
-                        f"| {r['action'].upper()} "
-                        f"| {r['conviction']} "
-                        f"| {r['reasoning']} |"
-                    )
-                _log("")
-        else:
-            _log("## LLM Commentary\n")
-            _log("*Skipped — LLM API key not configured or call failed.*\n")
-
-        # ---- SurrealDB state AFTER pipeline ----
-        _log("## SurrealDB State — After Pipeline\n")
-        after = _table_counts(orch)
-        _log("| Table | Before | After | Δ |")
-        _log("|---|---:|---:|---:|")
-        for table in sorted(EXPECTED_TABLES):
-            b = before.get(table, 0)
-            a = after.get(table, 0)
-            delta = a - b
-            delta_str = f"+{delta}" if delta > 0 else str(delta)
-            _log(f"| {table} | {b} | {a} | {delta_str} |")
-        _log("")
-
-        # ---- Instrument details ----
-        instruments = list_instruments(orch.db)
-        if instruments:
-            _log("## Instruments in Database\n")
-            _log("| Symbol | eToro ID | Asset Class | Exchange | Daily Candles |")
-            _log("|---|---:|---|---|---:|")
-            for inst in sorted(instruments, key=lambda i: i.get("symbol", "")):
-                iid = inst.get("etoro_id", 0)
-                total = count_candles(orch.db, iid, "1d")
-                _log(
-                    f"| {inst.get('symbol', '?')} "
-                    f"| {iid} "
-                    f"| {inst.get('asset_class', '?')} "
-                    f"| {inst.get('exchange', '—') or '—'} "
-                    f"| {total} |"
-                )
-            _log("")
-
-        # ---- Analysis results ----
-        analyses = get_analyses_by_run_id(orch.db, summary["run_id"])
-        if analyses:
-            # Build a symbol lookup from instruments
-            inst_lookup: dict[str, str] = {}
-            for inst in instruments:
-                inst_lookup[str(inst.get("id", ""))] = inst.get("symbol", "?")
-
-            _log("## Analysis Results\n")
-            _log("| Symbol | Trend | Strength | Support | Resistance | Momentum |")
-            _log("|---|---|---:|---:|---:|---|")
-            for analysis in analyses:
-                # Resolve instrument symbol from the record ID
-                inst_ref = analysis.get("instrument", "")
-                symbol = inst_lookup.get(str(inst_ref), str(inst_ref))
-
-                trend = analysis.get("trend", "?")
-                strength = analysis.get("trend_strength", 0.0)
-                pa = analysis.get("price_action", {})
-                support = pa.get("support")
-                resistance = pa.get("resistance")
-                momentum = pa.get("momentum_signal", "?")
-
-                support_str = f"{support:.2f}" if support is not None else "—"
-                resistance_str = f"{resistance:.2f}" if resistance is not None else "—"
-
-                _log(
-                    f"| {symbol} "
-                    f"| {trend} "
-                    f"| {strength:.2f} "
-                    f"| {support_str} "
-                    f"| {resistance_str} "
-                    f"| {momentum} |"
-                )
-            _log("")
-
-        # ---- Latest snapshot details ----
-        snapshot = get_latest_snapshot(orch.db)
-        if snapshot:
-            _log("## Latest Portfolio Snapshot\n")
-            _log(f"- **Total value:** ${snapshot.get('total_value', 0):,.2f}")
-            _log(f"- **Cash available:** ${snapshot.get('cash_available', 0):,.2f}")
-            _log(f"- **Open positions:** {snapshot.get('open_positions', 0)}")
-            _log(f"- **Total P&L:** ${snapshot.get('total_pnl', 0):,.2f}")
-            _log(f"- **Run type:** {snapshot.get('run_type', '?')}")
-            _log(f"- **Captured at:** {snapshot.get('captured_at', '?')}")
-            _log("")
-
-            # Show individual positions if present
-            positions = snapshot.get("positions", [])
-            if positions:
-                _log(f"### Positions ({len(positions)})\n")
-                _log("| # | Instrument ID | Direction | Open Rate | Amount | Units | P&L |")
-                _log("|---:|---:|---|---:|---:|---:|---:|")
-                for idx, pos in enumerate(positions, 1):
-                    direction = "Long" if pos.get("isBuy", pos.get("is_buy")) else "Short"
-                    pnl_data = pos.get("unrealizedPnL", pos.get("unrealized_pnl", {}))
-                    pnl_val = "—"
-                    if isinstance(pnl_data, dict) and pnl_data:
-                        pnl_val = f"${pnl_data.get('pnL', pnl_data.get('pnl', 0)):,.2f}"
-                    _log(
-                        f"| {idx} "
-                        f"| {pos.get('instrumentID', pos.get('instrument_id', '?'))} "
-                        f"| {direction} "
-                        f"| {pos.get('openRate', pos.get('open_rate', 0)):.4f} "
-                        f"| ${pos.get('amount', 0):,.2f} "
-                        f"| {pos.get('units', 0):.4f} "
-                        f"| {pnl_val} |"
-                    )
-                _log("")
-
-        # ---- Snapshot history ----
-        all_snaps = query_snapshots(orch.db, limit=10)
-        if len(all_snaps) > 1:
-            _log("## Recent Snapshots (last 10)\n")
-            _log("| # | Run Type | Positions | Total Value | P&L | Captured At |")
-            _log("|---:|---|---:|---:|---:|---|")
-            for idx, snap in enumerate(all_snaps, 1):
-                _log(
-                    f"| {idx} "
-                    f"| {snap.get('run_type', '?')} "
-                    f"| {snap.get('open_positions', 0)} "
-                    f"| ${snap.get('total_value', 0):,.2f} "
-                    f"| ${snap.get('total_pnl', 0):,.2f} "
-                    f"| {snap.get('captured_at', '?')} |"
-                )
-            _log("")
-
-    # ---- Save report to file ----
-    reports_dir = Path("reports")
-    reports_dir.mkdir(exist_ok=True)
-    report_path = reports_dir / f"{ts_label}_{run_type}_pipeline.md"
-    report_path.write_text(_buffer.getvalue(), encoding="utf-8")
-    print(f"\n📄 Report saved to: {report_path}")
+        # Save markdown report to file
+        md = format_markdown(report, verbose=verbose)
+        reports_dir = Path("reports")
+        reports_dir.mkdir(exist_ok=True)
+        report_path = reports_dir / f"{ts_label}_{run_type}_pipeline.md"
+        report_path.write_text(md, encoding="utf-8")
+        print(f"\n📄 Report saved to: {report_path}")
 
 
 if __name__ == "__main__":

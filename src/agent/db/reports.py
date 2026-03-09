@@ -115,6 +115,27 @@ def get_latest_report(db: SyncTemplate) -> dict[str, Any] | None:
     return first_or_none(result)
 
 
+def get_previous_report(
+    db: SyncTemplate,
+    current_run_id: str,
+) -> dict[str, Any] | None:
+    """Retrieve the most recent report that isn't the current run.
+
+    Args:
+        db: An open SurrealDB connection.
+        current_run_id: The run ID to exclude.
+
+    Returns:
+        The previous report record dict, or ``None`` if none exists.
+    """
+    result = db.query(
+        "SELECT * FROM report WHERE run_id != $run_id "
+        "ORDER BY created_at DESC LIMIT 1;",
+        {"run_id": current_run_id},
+    )
+    return first_or_none(result)
+
+
 def query_reports(
     db: SyncTemplate,
     run_type: RunType | None = None,

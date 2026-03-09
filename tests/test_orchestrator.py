@@ -20,6 +20,7 @@ from agent.db.snapshots import get_latest_snapshot, query_snapshots
 from agent.db.analysis import get_analyses_by_run_id
 from agent.etoro.client import EToroClient
 from agent.orchestrator import Orchestrator, PipelineError
+from agent.reporting.generator import Report
 from agent.reporting.llm import CommentaryResponse, PositionCommentary, Recommendation
 
 
@@ -695,3 +696,43 @@ def test_run_data_pipeline_empty_portfolio_no_commentary(
     summary = orch.run_data_pipeline("market_open")
 
     assert summary["commentary"] is None
+
+
+# ---------------------------------------------------------------------------
+# Report generation tests (Step 6)
+# ---------------------------------------------------------------------------
+
+
+def test_run_data_pipeline_generates_report_object(
+    db: SyncTemplate, test_settings: Settings, httpx_mock
+) -> None:
+    """Pipeline includes a Report object in the summary dict."""
+    _mock_full_pipeline(httpx_mock, candle_count=15)
+    orch = _create_orchestrator(test_settings, db)
+
+    summary = orch.run_data_pipeline("market_open")
+
+    assert "report" in summary
+    report = summary["report"]
+    assert isinstance(report, Report)
+    assert report.run_id == summary["run_id"]
+    assert report.run_type == "market_open"
+    assert report.snapshot is not None
+    assert len(report.instruments) == 2
+    assert len(report.analyses) == 2
+
+
+def test_run_data_pipeline_empty_portfolio_has_report(
+    db: SyncTemplate, test_settings: Settings, httpx_mock
+) -> None:
+    """Even empty portfolios produce a Report object."""
+    httpx_mock.add_response(
+        url="https://example.com/trading/info/real/pnl",
+        json=_empty_portfolio_response(),
+    )
+
+    orch = _create_orchestrator(test_settings, db)
+    summary = orch.run_data_pipeline("market_open")
+
+    assert isinstance(summary["report"], Report)
+    assert summary["report"].snapshot.open_positions == 0

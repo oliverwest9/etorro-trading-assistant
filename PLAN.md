@@ -603,12 +603,12 @@ db/
 - **Manual verification**: run full pipeline, review terminal output and saved markdown file
 
 **Acceptance Criteria:**
-- [ ] `generate_report()` assembles portfolio snapshot, analyses, and LLM commentary into a `Report` object
-- [ ] Report is printed to terminal with readable formatting via `rich`
-- [ ] Report is saved as a timestamped markdown file in `reports/` (e.g. `2026-02-09_market_open.md`)
-- [ ] Report and recommendations are stored in SurrealDB
-- [ ] Full pipeline runs end-to-end: data fetch -> analysis -> LLM -> report output
-- [ ] Tests verify report assembly and markdown output structure
+- [x] `generate_report()` assembles portfolio snapshot, analyses, and LLM commentary into a `Report` object
+- [x] Report is printed to terminal with readable formatting via `rich`
+- [x] Report is saved as a timestamped markdown file in `reports/` (e.g. `2026-02-09_market_open.md`)
+- [x] Report and recommendations are stored in SurrealDB
+- [x] Full pipeline runs end-to-end: data fetch -> analysis -> LLM -> report output
+- [x] Tests verify report assembly and markdown output structure
 
 ### Step 11: CLI & Run Logging
 - Implement `main.py`: CLI with `--run-type` argument (market_open / market_close)
@@ -805,7 +805,7 @@ Each row maps to a discrete PR. Complete and merge each PR before starting the n
 | TBD | End-to-end data pipeline | Step 7 | `orchestrator.py` (data fetch + store), `scripts/run_pipeline.py`, integration tests | Done |
 | TBD | Analysis engine | Step 8 | `analysis/types.py`, `analysis/registry.py`, `analysis/indicators/`, `analysis/price_action.py`, `analysis/sector.py`, `db/analysis.py`, orchestrator Step 4, analysis tests | Done |
 | TBD | LLM commentary | Step 9 | `reporting/llm.py`, prompt design, structured output parsing, orchestrator Step 5 wiring, mocked tests | Done |
-| TBD | Report generation & output | Step 10 | `reporting/generator.py`, `reporting/formatter.py`, full pipeline wiring, report tests | Not Started |
+| TBD | Report generation & output | Step 10 | `reporting/generator.py`, `reporting/formatter.py`, full pipeline wiring, report tests | Done |
 | TBD | CLI & run logging | Step 11 | `main.py` CLI, `run_log` lifecycle, structured logging, CLI tests | Not Started |
 | TBD | Polish & hardening | Step 12 | Error handling, partial runs, config table, `backfill_candles.py`, test review | Not Started |
 
