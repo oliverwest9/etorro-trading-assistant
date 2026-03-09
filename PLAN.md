@@ -327,8 +327,13 @@ etoro-trading-agent/
 | `pytest` | Testing framework |
 | `pytest-httpx` | Mock HTTP responses in tests |
 | `rich` | Terminal output formatting for reports |
-| `python-telegram-bot` | Telegram Bot API SDK for sending reports and handling conversations |
-| `mcp` | Model Context Protocol SDK for exposing agent skills as tools |
+
+### Planned Dependencies (not yet in `pyproject.toml`)
+
+| Package | Introduced In | Purpose |
+|---|---|---|
+| `langchain` / `langgraph` | Step 13 | Agentic orchestration and ReAct agent framework |
+| `mcp` | Step 15 | Model Context Protocol SDK for exposing agent skills as tools |
 
 ---
 
@@ -665,13 +670,17 @@ Integrate a Telegram bot so the agent can push reports and alerts directly to th
 **Architecture:**
 
 ```
-telegram/
+src/agent/telegram/
   bot.py              — TelegramBot class: send messages, format reports for Telegram
   formatter.py        — Convert Report objects to Telegram-friendly markdown (MarkdownV2)
+
+tests/telegram/
+  test_bot.py         — Tests for TelegramBot message sending and error handling
+  test_formatter.py   — Tests for Telegram markdown formatting
 ```
 
 **Design Decisions:**
-- **`python-telegram-bot`** — the mature, well-maintained Python SDK for the Telegram Bot API
+- **Direct Telegram Bot API via `httpx`** — use synchronous HTTP calls to the Bot API (no async, consistent with project design)
 - **One-way push only** — this step sends reports to a configured chat ID; no incoming message handling yet
 - **Graceful degradation** — if Telegram credentials are missing or the API fails, the pipeline completes normally (same pattern as LLM fallback in Step 9)
 - **Formatted output** — reports are condensed into a Telegram-friendly format: headline, top recommendations, key P&L figures, with a link to the full markdown report
@@ -702,29 +711,32 @@ This step builds on the LangGraph migration (Step 13) and the Telegram bot (Step
 **Architecture:**
 
 ```
-telegram/
+src/agent/telegram/
   bot.py              — Extended: add incoming message handler, conversation management
   handlers.py         — Route incoming messages to the agent, manage conversation state
-agent/
-  skills/
-    __init__.py        — Skill registry
-    portfolio.py       — Skill: fetch and summarise current portfolio
-    instrument.py      — Skill: look up instrument details, current price, trend
-    analysis.py        — Skill: run on-demand analysis for a specific instrument
-    history.py         — Skill: query historical reports, compare performance over time
-    report.py          — Skill: generate a full or partial report on demand
-    watchlist.py       — Skill: manage and query watchlist instruments
-  mcp/
-    server.py          — MCP (Model Context Protocol) server exposing skills as tools
-    protocol.py        — MCP request/response types and tool definitions
-  conversational.py    — Conversational agent: receives user message, selects skills, generates response
+src/agent/skills/
+  __init__.py          — Skill registry
+  portfolio.py         — Skill: fetch and summarise current portfolio
+  instrument.py        — Skill: look up instrument details, current price, trend
+  analysis.py          — Skill: run on-demand analysis for a specific instrument
+  history.py           — Skill: query historical reports, compare performance over time
+  report.py            — Skill: generate a full or partial report on demand
+  watchlist.py         — Skill: manage and query watchlist instruments
+src/agent/mcp/
+  server.py            — MCP (Model Context Protocol) server exposing skills as tools
+  protocol.py          — MCP request/response types and tool definitions
+src/agent/conversational.py — Conversational agent: receives user message, selects skills, generates response
+
+tests/skills/          — Skill unit tests (mocked dependencies)
+tests/mcp/             — MCP server and protocol tests
+tests/telegram/        — Extended Telegram handler and conversation tests
 ```
 
 **Design Decisions:**
 - **MCP (Model Context Protocol)** — skills are exposed as MCP tools with typed input/output schemas, making them discoverable and composable by the LLM agent. This follows the emerging standard for LLM-tool interoperability
 - **Skill-based architecture** — each skill is a self-contained unit that wraps existing modules (eToro client, DB queries, analysis engine). Skills declare their name, description, input schema, and execute method
 - **Conversational agent** — a LangGraph `ReAct` agent that receives user messages, reasons about which skills to invoke, calls them, and synthesises a natural language response
-- **Telegram as the interface** — the bot runs as a long-polling process, listening for incoming messages and routing them to the conversational agent. Each user gets a conversation thread with context retention
+- **Telegram as the interface (separate runtime)** — this step intentionally introduces a **separate long-polling process** for the conversational bot, distinct from the core agent's single-invocation CLI model. The scheduled pipeline (Steps 1–12) continues to run as a batch CLI command on a cron schedule, while the conversational bot runs as a standalone long-lived service. Deployment considerations (process manager, systemd, Docker container) are addressed in this step. Each user gets a conversation thread with context retention
 - **Context window** — the agent has access to recent conversation history (last N messages) plus SurrealDB long-term memory (previous reports, analyses, portfolio history) for informed responses
 - **Permission model** — read-only; the agent can fetch data and run analyses but cannot execute trades (consistent with the project's advisory-only principle)
 
@@ -787,11 +799,13 @@ Bot: "TSLA is currently at $248.50 (+1.2% today). The trend is
 | **Voice Interface** | Add Telegram voice message support — transcribe queries and respond with voice notes |
 | **Multi-User Support** | Per-user API key management, isolated portfolio tracking, role-based access |
 
-### 7.1 Future: LangChain/LangGraph Migration
+### 7.1 LangChain/LangGraph Migration (Step 13 Detail)
 
-The current `Orchestrator` is a procedural pipeline — a fixed sequence of steps with no decision-making. A future migration to **LangGraph** would replace this with an agentic architecture where an LLM decides what to fetch, analyse, and report on.
+> **Note:** This section provides additional design context for **Step 13** in the roadmap above. It is not a separate future phase — Step 13 is an in-roadmap step to be completed after Step 12.
 
-**Current state:** Fixed pipeline: fetch portfolio → resolve instruments → fetch candles → (future: analyse → LLM → report). Every instrument gets the same treatment regardless of context.
+The current `Orchestrator` is a procedural pipeline — a fixed sequence of steps with no decision-making. Step 13 replaces this with an agentic architecture where an LLM decides what to fetch, analyse, and report on.
+
+**Current state:** Fixed pipeline: fetch portfolio → resolve instruments → fetch candles → analyse → LLM → report. Every instrument gets the same treatment regardless of context.
 
 **Target state:** A LangGraph agent with tools that can make adaptive decisions:
 - Fetch more history if a trend is unclear
@@ -812,7 +826,7 @@ The current `Orchestrator` is a procedural pipeline — a fixed sequence of step
 
 **Memory:** SurrealDB serves as long-term memory — previous runs, reports, analyses, and portfolio history are already persisted. The agent can query this context to inform decisions.
 
-**Key design constraint:** Tools must be thin wrappers around existing modules. The LangChain migration should reuse all Step 2–12 code, only replacing the orchestration layer. This means the MVP's modular architecture (separate etoro/, db/, analysis/, reporting/ packages) is preserved.
+**Key design constraint:** Tools must be thin wrappers around existing modules. The Step 13 migration should reuse all Step 2–12 code, only replacing the orchestration layer. This means the MVP's modular architecture (separate etoro/, db/, analysis/, reporting/ packages) is preserved.
 
 **Dependencies to add:** `langchain`, `langgraph`, `langchain-openai` / `langchain-anthropic`
 
