@@ -571,16 +571,29 @@ db/
 - Implement `reporting/llm.py`: send structured analysis data to LLM, receive natural language commentary
 - Design the LLM prompt: portfolio state + analysis data -> market commentary + recommendations
 - Implement structured output parsing (LLM returns JSON with commentary + actions)
+- Wire into orchestrator as pipeline Step 5 (after analysis)
+- Persist report and recommendation records to SurrealDB
 - Write tests with mocked LLM responses
 - **Manual verification**: generate commentary for real portfolio data, assess quality
 
+**Design Decisions:**
+- **Google Gemini** — using `google-genai>=1.0` SDK with `gemini-2.5-flash` model (chosen over OpenAI/Anthropic for cost and structured output support)
+- **Structured JSON output** — Gemini's `response_mime_type="application/json"` + `response_schema` ensures typed responses matching `CommentaryResponse` Pydantic model
+- **Three-layer architecture** — `build_commentary_request()` (pure data assembly) → `format_prompt()` (pure rendering) → `generate_commentary()` (API call + parsing); layers 1–2 testable without API key
+- **Graceful degradation** — if LLM API key is missing or call fails, pipeline continues with `commentary=None`
+- **Orchestrator wiring** — Step 5 added to `run_data_pipeline()` after analysis; report + recommendations persisted via `db/reports.py`
+
 **Acceptance Criteria:**
-- [ ] `generate_commentary(portfolio, analyses)` sends data to the configured LLM and returns structured output
-- [ ] LLM response is parsed into: summary headline, per-position commentary, recommended actions (with action type and conviction), and market context
-- [ ] Each recommendation includes an action (`buy`/`sell`/`hold`/`reduce`/`increase`), conviction (`high`/`medium`/`low`), and reasoning
-- [ ] Supports both OpenAI and Anthropic via the `LLM_PROVIDER` config setting
-- [ ] Tests use mocked LLM responses and verify parsing logic
-- [ ] Manual test produces coherent, relevant commentary for the current portfolio
+- [x] `generate_commentary(request, settings)` sends data to the configured LLM and returns structured output
+- [x] LLM response is parsed into: summary headline, per-position commentary, recommended actions (with action type and conviction), and market context
+- [x] Each recommendation includes an action (`buy`/`sell`/`hold`/`reduce`/`increase`), conviction (`high`/`medium`/`low`), and reasoning
+- [x] Supports Google Gemini via the `LLM_PROVIDER` config setting (Gemini chosen over OpenAI/Anthropic)
+- [x] Tests use mocked LLM responses and verify parsing logic
+- [x] Manual test produces coherent, relevant commentary for the current portfolio
+- [x] Commentary is wired into orchestrator as pipeline Step 5
+- [x] Report and recommendation records are persisted to SurrealDB
+- [x] Pipeline completes gracefully if LLM API key is missing or call fails
+- [x] `scripts/run_pipeline.py` report includes LLM commentary section
 
 ### Step 10: Report Generation & Output
 - Implement `reporting/generator.py`: assemble all data into a report structure
@@ -791,7 +804,7 @@ Each row maps to a discrete PR. Complete and merge each PR before starting the n
 | #8 | SurrealDB data layer | Step 6 | `db/utils.py`, `db/instruments.py`, `db/candles.py`, `db/snapshots.py`, `db/reports.py`, CRUD tests | Done |
 | TBD | End-to-end data pipeline | Step 7 | `orchestrator.py` (data fetch + store), `scripts/run_pipeline.py`, integration tests | Done |
 | TBD | Analysis engine | Step 8 | `analysis/types.py`, `analysis/registry.py`, `analysis/indicators/`, `analysis/price_action.py`, `analysis/sector.py`, `db/analysis.py`, orchestrator Step 4, analysis tests | Done |
-| TBD | LLM commentary | Step 9 | `reporting/llm.py`, prompt design, structured output parsing, mocked tests | Not Started |
+| TBD | LLM commentary | Step 9 | `reporting/llm.py`, prompt design, structured output parsing, orchestrator Step 5 wiring, mocked tests | Done |
 | TBD | Report generation & output | Step 10 | `reporting/generator.py`, `reporting/formatter.py`, full pipeline wiring, report tests | Not Started |
 | TBD | CLI & run logging | Step 11 | `main.py` CLI, `run_log` lifecycle, structured logging, CLI tests | Not Started |
 | TBD | Polish & hardening | Step 12 | Error handling, partial runs, config table, `backfill_candles.py`, test review | Not Started |

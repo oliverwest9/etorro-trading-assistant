@@ -10,9 +10,8 @@ agent run:
    fetch candles and upsert instrument metadata
 4. **Analyse** — run price-action indicators and sector grouping,
    persist results to the ``analysis`` table
-
-This module implements steps 1–4 of the 6-step run pipeline.
-Steps 5–6 (LLM commentary, report) will be added in later roadmap steps.
+5. **Commentary** — send portfolio + analysis data to the LLM,
+   persist the report and recommendations to the DB
 """
 
 from __future__ import annotations
@@ -28,16 +27,23 @@ from agent.analysis.price_action import analyse_price_action
 from agent.analysis.sector import analyse_sector
 from agent.analysis.types import AnalysisResult
 from agent.config import Settings
-from agent.db.analysis import create_analysis
+from agent.db.analysis import create_analysis, get_analyses_by_run_id
 from agent.db.candles import bulk_insert_candles, query_candles
 from agent.db.connection import get_connection
 from agent.db.instruments import list_instruments, upsert_instrument
+from agent.db.reports import create_report, create_recommendation
 from agent.db.schema import apply_schema
 from agent.db.snapshots import create_snapshot
 from agent.etoro.client import EToroClient, EToroError
 from agent.etoro.market_data import get_candles
 from agent.etoro.models import Instrument, InstrumentSearchResponse
 from agent.etoro.portfolio import get_portfolio
+from agent.reporting.llm import (
+    CommentaryResponse,
+    build_commentary_request,
+    format_prompt,
+    generate_commentary,
+)
 from agent.types import RunType
 
 logger = structlog.get_logger(__name__)
@@ -135,12 +141,13 @@ class Orchestrator:
     # ------------------------------------------------------------------
 
     def run_data_pipeline(self, run_type: str) -> dict[str, Any]:
-        """Execute steps 1–4 of the agent run pipeline.
+        """Execute steps 1–5 of the agent run pipeline.
 
         1. **Init** — generate ``run_id``
         2. **Fetch portfolio** — save snapshot, extract instrument IDs
         3. **Fetch market data** — resolve instruments, fetch candles
         4. **Analyse** — run indicators, sector grouping, persist results
+        5. **Commentary** — generate LLM commentary, persist report
 
         Args:
             run_type: ``"market_open"`` or ``"market_close"``.
@@ -149,7 +156,8 @@ class Orchestrator:
             A summary dict with keys: ``run_id``, ``run_type``,
             ``snapshot_id``, ``instruments_processed``,
             ``instruments_failed``, ``candle_counts``,
-            ``analyses_created``, ``errors``.
+            ``analyses_created``, ``commentary``, ``report_id``,
+            ``errors``.
 
         Raises:
             PipelineError: If the portfolio fetch fails (fatal).
@@ -198,6 +206,7 @@ class Orchestrator:
                 "instruments_failed": 0,
                 "candle_counts": {},
                 "analyses_created": 0,
+                "commentary": None,
                 "errors": [],
             }
 
@@ -249,6 +258,16 @@ class Orchestrator:
             errors=errors,
         )
 
+        # ---- Step 5: LLM Commentary ----
+        commentary_result = self._run_commentary(
+            run_id=run_id,
+            run_type=run_type,
+            snapshot_id=snapshot_id,
+            snapshot=snapshot,
+            instrument_map=instrument_map,
+            errors=errors,
+        )
+
         summary: dict[str, Any] = {
             "run_id": run_id,
             "run_type": run_type,
@@ -257,6 +276,7 @@ class Orchestrator:
             "instruments_failed": len(errors),
             "candle_counts": candle_counts,
             "analyses_created": analyses_created,
+            "commentary": commentary_result,
             "errors": errors,
         }
 
@@ -385,6 +405,195 @@ class Orchestrator:
             total_instruments=len(instrument_ids),
         )
         return analyses_created
+
+    def _run_commentary(
+        self,
+        run_id: str,
+        run_type: str,
+        snapshot_id: str,
+        snapshot: dict[str, Any],
+        instrument_map: dict[int, Instrument],
+        errors: list[dict[str, Any]],
+    ) -> dict[str, Any] | None:
+        """Step 5: generate LLM commentary and persist to the DB.
+
+        Fetches the analyses created in step 4, builds the commentary
+        request, calls Gemini, persists the report and individual
+        recommendation records.
+
+        If the LLM API key is not configured or the call fails, the
+        error is logged and ``None`` is returned so the pipeline can
+        still complete.
+
+        Returns:
+            A dict with ``report_id``, ``summary``, ``market_context``,
+            ``position_commentaries``, and ``recommendations`` keys,
+            or ``None`` if commentary generation was skipped/failed.
+        """
+        if not self._settings.llm_api_key:
+            logger.warning("llm_skipped_no_api_key")
+            return None
+
+        logger.info("commentary_start", run_id=run_id)
+
+        # Fetch analyses from this run
+        analyses = get_analyses_by_run_id(self.db, run_id)
+        if not analyses:
+            logger.warning("commentary_skipped_no_analyses")
+            return None
+
+        # Build instrument map as plain dicts for the LLM module
+        inst_map_plain: dict[int, dict[str, Any]] = {}
+        for iid, inst in instrument_map.items():
+            inst_map_plain[iid] = {
+                "etoro_id": inst.instrument_id,
+                "symbol": inst.symbol,
+                "name": inst.name,
+            }
+
+        # Enrich analyses with instrument_etoro_id for build_commentary_request
+        enriched_analyses: list[dict[str, Any]] = []
+        for a in analyses:
+            enriched = dict(a)
+            # The DB stores instrument as RecordID; extract the numeric ID
+            inst_ref = a.get("instrument")
+            if hasattr(inst_ref, "id"):
+                enriched["instrument_etoro_id"] = inst_ref.id
+            elif isinstance(inst_ref, str) and ":" in inst_ref:
+                try:
+                    enriched["instrument_etoro_id"] = int(inst_ref.split(":", 1)[1])
+                except (ValueError, IndexError):
+                    pass
+            enriched_analyses.append(enriched)
+
+        try:
+            request = build_commentary_request(
+                run_type=run_type,
+                snapshot=snapshot,
+                analyses=enriched_analyses,
+                instrument_map=inst_map_plain,
+            )
+            response = generate_commentary(request, self._settings)
+        except Exception as exc:
+            logger.error("commentary_failed", error=str(exc))
+            errors.append({"step": "commentary", "error": str(exc)})
+            return None
+
+        # Persist report
+        report_markdown = self._render_commentary_markdown(response)
+        try:
+            report_record = create_report(
+                self.db,
+                run_id=run_id,
+                run_type=run_type,
+                snapshot_id=snapshot_id,
+                commentary=response.market_context,
+                summary=response.summary,
+                report_markdown=report_markdown,
+                recommendations=[
+                    {
+                        "symbol": r.symbol,
+                        "action": r.action,
+                        "conviction": r.conviction,
+                        "reasoning": r.reasoning,
+                    }
+                    for r in response.recommendations
+                ],
+            )
+            report_id = str(report_record.get("id", ""))
+        except Exception as exc:
+            logger.error("report_persist_failed", error=str(exc))
+            errors.append({"step": "report_persist", "error": str(exc)})
+            return None
+
+        # Persist individual recommendation records
+        # Build a lookup from instrument_etoro_id -> analysis record id
+        analysis_id_by_instrument: dict[int, str] = {}
+        for a in analyses:
+            inst_ref = a.get("instrument")
+            etoro_id = None
+            if hasattr(inst_ref, "id"):
+                etoro_id = inst_ref.id
+            elif isinstance(inst_ref, str) and ":" in inst_ref:
+                try:
+                    etoro_id = int(inst_ref.split(":", 1)[1])
+                except (ValueError, IndexError):
+                    pass
+            if etoro_id is not None:
+                analysis_id_by_instrument[etoro_id] = str(a.get("id", ""))
+
+        for rec in response.recommendations:
+            try:
+                analysis_id = analysis_id_by_instrument.get(
+                    rec.instrument_id, ""
+                )
+                if analysis_id:
+                    create_recommendation(
+                        self.db,
+                        report_id=report_id,
+                        instrument_etoro_id=rec.instrument_id,
+                        action=rec.action,
+                        conviction=rec.conviction,
+                        reasoning=rec.reasoning,
+                        analysis_id=analysis_id,
+                    )
+            except Exception as exc:
+                logger.warning(
+                    "recommendation_persist_failed",
+                    symbol=rec.symbol,
+                    error=str(exc),
+                )
+
+        logger.info(
+            "commentary_complete",
+            report_id=report_id,
+            recommendations=len(response.recommendations),
+        )
+
+        return {
+            "report_id": report_id,
+            "summary": response.summary,
+            "market_context": response.market_context,
+            "position_commentaries": [
+                {"symbol": pc.symbol, "commentary": pc.commentary}
+                for pc in response.position_commentaries
+            ],
+            "recommendations": [
+                {
+                    "symbol": r.symbol,
+                    "action": r.action,
+                    "conviction": r.conviction,
+                    "reasoning": r.reasoning,
+                }
+                for r in response.recommendations
+            ],
+        }
+
+    @staticmethod
+    def _render_commentary_markdown(response: CommentaryResponse) -> str:
+        """Render a ``CommentaryResponse`` as a markdown string."""
+        lines: list[str] = []
+        lines.append("## LLM Commentary\n")
+        lines.append(f"**{response.summary}**\n")
+        lines.append(response.market_context)
+        lines.append("")
+
+        if response.position_commentaries:
+            lines.append("### Position Analysis\n")
+            for pc in response.position_commentaries:
+                lines.append(f"**{pc.symbol}**: {pc.commentary}\n")
+
+        if response.recommendations:
+            lines.append("### Recommendations\n")
+            lines.append("| Symbol | Action | Conviction | Reasoning |")
+            lines.append("|---|---|---|---|")
+            for r in response.recommendations:
+                lines.append(
+                    f"| {r.symbol} | {r.action.upper()} | {r.conviction} | {r.reasoning} |"
+                )
+            lines.append("")
+
+        return "\n".join(lines)
 
     def _resolve_instruments(
         self, instrument_ids: list[int]

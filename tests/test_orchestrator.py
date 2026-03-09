@@ -7,6 +7,7 @@ in-memory instance provided by the ``db`` fixture from conftest.
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from unittest.mock import patch
 
 import pytest
 from surrealdb.connections.sync_template import SyncTemplate
@@ -14,10 +15,12 @@ from surrealdb.connections.sync_template import SyncTemplate
 from agent.config import Settings
 from agent.db.candles import count_candles
 from agent.db.instruments import get_instrument_by_etoro_id, list_instruments
+from agent.db.reports import get_report_by_run_id, get_recommendations_for_report
 from agent.db.snapshots import get_latest_snapshot, query_snapshots
 from agent.db.analysis import get_analyses_by_run_id
 from agent.etoro.client import EToroClient
 from agent.orchestrator import Orchestrator, PipelineError
+from agent.reporting.llm import CommentaryResponse, PositionCommentary, Recommendation
 
 
 # ---------------------------------------------------------------------------
@@ -447,9 +450,9 @@ def test_run_data_pipeline_context_manager(
         surreal_database="test_db",
         surreal_user="root",
         surreal_pass="root",
-        llm_provider="openai",
-        llm_api_key="test",
-        llm_model="gpt-4o",
+        llm_provider="gemini",
+        llm_api_key="",
+        llm_model="gemini-2.0-flash",
     )
 
     with Orchestrator(settings) as orch:
@@ -547,3 +550,148 @@ def test_run_data_pipeline_analysis_survives_instrument_failure(
     assert summary["analyses_created"] == 1
     analyses = get_analyses_by_run_id(db, summary["run_id"])
     assert len(analyses) == 1
+
+
+# ---------------------------------------------------------------------------
+# Commentary helper
+# ---------------------------------------------------------------------------
+
+
+def _mock_commentary_response(instrument_ids: tuple[int, ...] = (1001, 1002)) -> CommentaryResponse:
+    """Build a fake CommentaryResponse for mocking generate_commentary."""
+    symbols = {1001: "AAPL", 1002: "BTC"}
+    return CommentaryResponse(
+        summary="Mixed signals across portfolio.",
+        market_context="US tech stable, crypto volatile.",
+        position_commentaries=[
+            PositionCommentary(
+                instrument_id=iid,
+                symbol=symbols.get(iid, f"SYM{iid}"),
+                commentary=f"{symbols.get(iid, f'SYM{iid}')} shows mixed signals.",
+            )
+            for iid in instrument_ids
+        ],
+        recommendations=[
+            Recommendation(
+                instrument_id=iid,
+                symbol=symbols.get(iid, f"SYM{iid}"),
+                action="hold",
+                conviction="medium",
+                reasoning=f"Maintain {symbols.get(iid, f'SYM{iid}')} position.",
+            )
+            for iid in instrument_ids
+        ],
+    )
+
+
+# ---------------------------------------------------------------------------
+# Commentary tests (Step 5)
+# ---------------------------------------------------------------------------
+
+
+def test_run_data_pipeline_generates_commentary(
+    db: SyncTemplate, test_settings: Settings, httpx_mock
+) -> None:
+    """Pipeline generates LLM commentary and includes it in the summary."""
+    _mock_full_pipeline(httpx_mock, candle_count=15)
+    test_settings.llm_api_key = "test-key"
+    orch = _create_orchestrator(test_settings, db)
+
+    mock_resp = _mock_commentary_response()
+    with patch("agent.orchestrator.generate_commentary", return_value=mock_resp):
+        summary = orch.run_data_pipeline("market_open")
+
+    commentary = summary["commentary"]
+    assert commentary is not None
+    assert commentary["summary"] == "Mixed signals across portfolio."
+    assert commentary["market_context"] == "US tech stable, crypto volatile."
+    assert len(commentary["position_commentaries"]) == 2
+    assert len(commentary["recommendations"]) == 2
+
+
+def test_run_data_pipeline_persists_report(
+    db: SyncTemplate, test_settings: Settings, httpx_mock
+) -> None:
+    """Pipeline persists the commentary as a report record in the DB."""
+    _mock_full_pipeline(httpx_mock, candle_count=15)
+    test_settings.llm_api_key = "test-key"
+    orch = _create_orchestrator(test_settings, db)
+
+    mock_resp = _mock_commentary_response()
+    with patch("agent.orchestrator.generate_commentary", return_value=mock_resp):
+        summary = orch.run_data_pipeline("market_open")
+
+    report = get_report_by_run_id(db, summary["run_id"])
+    assert report is not None
+    assert report["summary"] == "Mixed signals across portfolio."
+    assert report["run_type"] == "market_open"
+    assert "US tech stable" in report["commentary"]
+    assert report["report_markdown"] != ""
+
+
+def test_run_data_pipeline_persists_recommendations(
+    db: SyncTemplate, test_settings: Settings, httpx_mock
+) -> None:
+    """Pipeline persists individual recommendation records linked to the report."""
+    _mock_full_pipeline(httpx_mock, candle_count=15)
+    test_settings.llm_api_key = "test-key"
+    orch = _create_orchestrator(test_settings, db)
+
+    mock_resp = _mock_commentary_response()
+    with patch("agent.orchestrator.generate_commentary", return_value=mock_resp):
+        summary = orch.run_data_pipeline("market_open")
+
+    report_id = summary["commentary"]["report_id"]
+    recs = get_recommendations_for_report(db, report_id)
+    assert len(recs) == 2
+    actions = {r["action"] for r in recs}
+    assert actions == {"hold"}
+
+
+def test_run_data_pipeline_commentary_skipped_no_api_key(
+    db: SyncTemplate, test_settings: Settings, httpx_mock
+) -> None:
+    """Commentary is skipped when no LLM API key is configured."""
+    _mock_full_pipeline(httpx_mock, candle_count=15)
+    test_settings.llm_api_key = ""
+    orch = _create_orchestrator(test_settings, db)
+
+    summary = orch.run_data_pipeline("market_open")
+
+    assert summary["commentary"] is None
+
+
+def test_run_data_pipeline_commentary_survives_llm_failure(
+    db: SyncTemplate, test_settings: Settings, httpx_mock
+) -> None:
+    """If the LLM call fails, the pipeline still completes with commentary=None."""
+    _mock_full_pipeline(httpx_mock, candle_count=15)
+    test_settings.llm_api_key = "test-key"
+    orch = _create_orchestrator(test_settings, db)
+
+    with patch(
+        "agent.orchestrator.generate_commentary",
+        side_effect=RuntimeError("Gemini API failed"),
+    ):
+        summary = orch.run_data_pipeline("market_open")
+
+    assert summary["commentary"] is None
+    assert summary["analyses_created"] == 2
+    # The LLM error should be in the errors list
+    llm_errors = [e for e in summary["errors"] if e.get("step") == "commentary"]
+    assert len(llm_errors) == 1
+
+
+def test_run_data_pipeline_empty_portfolio_no_commentary(
+    db: SyncTemplate, test_settings: Settings, httpx_mock
+) -> None:
+    """An empty portfolio returns commentary=None (no analyses to comment on)."""
+    httpx_mock.add_response(
+        url="https://example.com/trading/info/real/pnl",
+        json=_empty_portfolio_response(),
+    )
+
+    orch = _create_orchestrator(test_settings, db)
+    summary = orch.run_data_pipeline("market_open")
+
+    assert summary["commentary"] is None
