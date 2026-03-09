@@ -328,6 +328,13 @@ etoro-trading-agent/
 | `pytest-httpx` | Mock HTTP responses in tests |
 | `rich` | Terminal output formatting for reports |
 
+### Planned Dependencies (not yet in `pyproject.toml`)
+
+| Package | Introduced In | Purpose |
+|---|---|---|
+| `langchain` / `langgraph` | Step 13 | Agentic orchestration and ReAct agent framework |
+| `mcp` | Step 15 | Model Context Protocol SDK for exposing agent skills as tools |
+
 ---
 
 ## 6. Agent Behaviour: The Run Pipeline
@@ -656,22 +663,149 @@ db/
 - [ ] All existing tests still pass — no regressions
 - [ ] New tests verify agent tool invocations and report output
 
+### Step 14: Telegram Bot Integration
+
+Integrate a Telegram bot so the agent can push reports and alerts directly to the user's phone. The bot acts as a one-way notification channel in this step — interactive conversations come in Step 15.
+
+**Architecture:**
+
+```
+src/agent/telegram/
+  bot.py              — TelegramBot class: send messages, format reports for Telegram
+  formatter.py        — Convert Report objects to Telegram-friendly markdown (MarkdownV2)
+
+tests/telegram/
+  test_bot.py         — Tests for TelegramBot message sending and error handling
+  test_formatter.py   — Tests for Telegram markdown formatting
+```
+
+**Design Decisions:**
+- **Direct Telegram Bot API via `httpx`** — use synchronous HTTP calls to the Bot API (no async, consistent with project design)
+- **One-way push only** — this step sends reports to a configured chat ID; no incoming message handling yet
+- **Graceful degradation** — if Telegram credentials are missing or the API fails, the pipeline completes normally (same pattern as LLM fallback in Step 9)
+- **Formatted output** — reports are condensed into a Telegram-friendly format: headline, top recommendations, key P&L figures, with a link to the full markdown report
+- **Pipeline wiring** — added as an optional sub-step within pipeline Step 6 (Output), after terminal and markdown output
+
+**Setup:**
+1. Create a bot via [BotFather](https://t.me/BotFather) and obtain the bot token
+2. Get the target chat ID (personal chat or group)
+3. Add `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` to `.env`
+
+**Acceptance Criteria:**
+- [ ] `TelegramBot` class sends messages to a configured chat ID using the Bot API
+- [ ] `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` are loaded from `.env` via `pydantic-settings`
+- [ ] Report summary is formatted for Telegram: headline, portfolio P&L, top 3 recommendations, market context snippet
+- [ ] Messages respect Telegram's 4096-character limit — long reports are split into multiple messages
+- [ ] Pipeline Step 6 sends the report via Telegram after terminal and markdown output
+- [ ] If Telegram credentials are missing, the pipeline completes without error (warning logged)
+- [ ] If the Telegram API call fails, the error is logged but the pipeline does not abort
+- [ ] Tests mock the Telegram API and verify message formatting and send logic
+- [ ] Manual test confirms a real message is delivered to the configured Telegram chat
+
+### Step 15: Fully Agentic Conversational Platform
+
+Transform the agent from a batch-run tool into a **fully interactive, conversational assistant** accessible via Telegram. Users can text the bot with natural language questions (e.g. "How is my portfolio doing?", "What's the trend on AAPL?", "Should I reduce my crypto exposure?") and the agent responds intelligently using its full toolkit.
+
+This step builds on the LangGraph migration (Step 13) and the Telegram bot (Step 14) to create an always-on assistant that combines real-time data access, historical context, and LLM reasoning.
+
+**Architecture:**
+
+```
+src/agent/telegram/
+  bot.py              — Extended: add incoming message handler, conversation management
+  handlers.py         — Route incoming messages to the agent, manage conversation state
+src/agent/skills/
+  __init__.py          — Skill registry
+  portfolio.py         — Skill: fetch and summarise current portfolio
+  instrument.py        — Skill: look up instrument details, current price, trend
+  analysis.py          — Skill: run on-demand analysis for a specific instrument
+  history.py           — Skill: query historical reports, compare performance over time
+  report.py            — Skill: generate a full or partial report on demand
+  watchlist.py         — Skill: manage and query watchlist instruments
+src/agent/mcp/
+  server.py            — MCP (Model Context Protocol) server exposing skills as tools
+  protocol.py          — MCP request/response types and tool definitions
+src/agent/conversational.py — Conversational agent: receives user message, selects skills, generates response
+
+tests/skills/          — Skill unit tests (mocked dependencies)
+tests/mcp/             — MCP server and protocol tests
+tests/telegram/        — Extended Telegram handler and conversation tests
+```
+
+**Design Decisions:**
+- **MCP (Model Context Protocol)** — skills are exposed as MCP tools with typed input/output schemas, making them discoverable and composable by the LLM agent. This follows the emerging standard for LLM-tool interoperability
+- **Skill-based architecture** — each skill is a self-contained unit that wraps existing modules (eToro client, DB queries, analysis engine). Skills declare their name, description, input schema, and execute method
+- **Conversational agent** — a LangGraph `ReAct` agent that receives user messages, reasons about which skills to invoke, calls them, and synthesises a natural language response
+- **Telegram as the interface (separate runtime)** — this step intentionally introduces a **separate long-polling process** for the conversational bot, distinct from the core agent's single-invocation CLI model. The scheduled pipeline (Steps 1–12) continues to run as a batch CLI command on a cron schedule, while the conversational bot runs as a standalone long-lived service. Deployment considerations (process manager, systemd, Docker container) are addressed in this step. Each user gets a conversation thread with context retention
+- **Context window** — the agent has access to recent conversation history (last N messages) plus SurrealDB long-term memory (previous reports, analyses, portfolio history) for informed responses
+- **Permission model** — read-only; the agent can fetch data and run analyses but cannot execute trades (consistent with the project's advisory-only principle)
+
+**MCP Tool Definitions:**
+
+| Tool | Description | Input | Output |
+|---|---|---|---|
+| `get_portfolio_summary` | Current portfolio overview with P&L | None | Portfolio positions, total value, daily P&L |
+| `get_instrument_price` | Current price and basic info for an instrument | `{ symbol: string }` | Bid, ask, daily change, instrument metadata |
+| `analyse_instrument` | Run full technical analysis on an instrument | `{ symbol: string, timeframe?: string }` | Trend, momentum, support/resistance, signal |
+| `compare_performance` | Compare instrument/portfolio performance over time | `{ symbol?: string, period: string }` | Performance metrics, comparison data |
+| `get_latest_report` | Fetch the most recent generated report | `{ run_type?: string }` | Full report with commentary and recommendations |
+| `search_instruments` | Search for instruments by name or symbol | `{ query: string }` | List of matching instruments |
+| `get_market_overview` | Sector-level market summary | None | Per-sector average returns, notable movers |
+
+**Conversation Flow:**
+
+```
+User: "How is Tesla doing?"
+  │
+  ▼
+Conversational Agent (LangGraph ReAct)
+  │
+  ├─ Reason: User wants Tesla analysis
+  ├─ Call skill: get_instrument_price({ symbol: "TSLA" })
+  ├─ Call skill: analyse_instrument({ symbol: "TSLA" })
+  ├─ Synthesise: Combine price data + analysis into natural language
+  │
+  ▼
+Bot: "TSLA is currently at $248.50 (+1.2% today). The trend is
+      bullish with strong momentum — it's been making higher highs
+      over the past 2 weeks. Key support at $240, resistance at $255.
+      Your position is up 8.3% overall."
+```
+
+**Acceptance Criteria:**
+- [ ] Telegram bot handles incoming messages and routes them to the conversational agent
+- [ ] At least 6 MCP skills are implemented: portfolio summary, instrument price, instrument analysis, performance comparison, latest report, instrument search
+- [ ] Each skill has a typed input/output schema and is registered in the MCP server
+- [ ] Conversational agent uses LangGraph ReAct pattern to reason about which skills to invoke
+- [ ] Agent can answer portfolio questions ("How is my portfolio?", "What's my best performer?")
+- [ ] Agent can answer instrument questions ("What's the trend on AAPL?", "Is Bitcoin bullish?")
+- [ ] Agent can generate on-demand reports ("Give me a market update", "Analyse my crypto positions")
+- [ ] Conversation context is maintained within a session (agent remembers earlier messages in the thread)
+- [ ] SurrealDB historical data is accessible as long-term memory (previous reports, analyses)
+- [ ] Agent responds within a reasonable time (~5-15 seconds for most queries)
+- [ ] Unknown or out-of-scope queries are handled gracefully ("I can help with portfolio and market questions...")
+- [ ] All skills have unit tests with mocked dependencies
+- [ ] Integration tests verify the full message → agent → skill → response flow
+- [ ] Manual test demonstrates a multi-turn conversation via Telegram with real data
+
 ### Future Phases (Post-MVP)
 
 | Phase | Description |
 |---|---|
-| **LangChain/LangGraph Migration** | Replace procedural orchestrator with an agentic pipeline (see Step 13 and section 7.1) |
 | **Automated Trading** | Add write-permission API key, implement position open/close, risk manager |
 | **AWS Deployment** | Containerise with Docker, deploy to ECS/Fargate, trigger via EventBridge schedule |
-| **Notifications** | Send report summary via Telegram/Discord/email |
 | **Dashboard** | Simple web UI to browse historical reports (SurrealDB live queries) |
 | **Strategy Backtesting** | Test analysis rules against historical candle data |
+| **Voice Interface** | Add Telegram voice message support — transcribe queries and respond with voice notes |
+| **Multi-User Support** | Per-user API key management, isolated portfolio tracking, role-based access |
 
-### 7.1 Future: LangChain/LangGraph Migration
+### 7.1 LangChain/LangGraph Migration (Step 13 Detail)
 
-The current `Orchestrator` is a procedural pipeline — a fixed sequence of steps with no decision-making. A future migration to **LangGraph** would replace this with an agentic architecture where an LLM decides what to fetch, analyse, and report on.
+> **Note:** This section provides additional design context for **Step 13** in the roadmap above. It is not a separate future phase — Step 13 is an in-roadmap step to be completed after Step 12.
 
-**Current state:** Fixed pipeline: fetch portfolio → resolve instruments → fetch candles → (future: analyse → LLM → report). Every instrument gets the same treatment regardless of context.
+The current `Orchestrator` is a procedural pipeline — a fixed sequence of steps with no decision-making. Step 13 replaces this with an agentic architecture where an LLM decides what to fetch, analyse, and report on.
+
+**Current state:** Fixed pipeline: fetch portfolio → resolve instruments → fetch candles → analyse → LLM → report. Every instrument gets the same treatment regardless of context.
 
 **Target state:** A LangGraph agent with tools that can make adaptive decisions:
 - Fetch more history if a trend is unclear
@@ -692,7 +826,7 @@ The current `Orchestrator` is a procedural pipeline — a fixed sequence of step
 
 **Memory:** SurrealDB serves as long-term memory — previous runs, reports, analyses, and portfolio history are already persisted. The agent can query this context to inform decisions.
 
-**Key design constraint:** Tools must be thin wrappers around existing modules. The LangChain migration should reuse all Step 2–12 code, only replacing the orchestration layer. This means the MVP's modular architecture (separate etoro/, db/, analysis/, reporting/ packages) is preserved.
+**Key design constraint:** Tools must be thin wrappers around existing modules. The Step 13 migration should reuse all Step 2–12 code, only replacing the orchestration layer. This means the MVP's modular architecture (separate etoro/, db/, analysis/, reporting/ packages) is preserved.
 
 **Dependencies to add:** `langchain`, `langgraph`, `langchain-openai` / `langchain-anthropic`
 
@@ -765,6 +899,10 @@ SURREAL_PASS=root
 LLM_PROVIDER=openai          # or anthropic
 LLM_API_KEY=your-llm-key
 LLM_MODEL=gpt-4o             # or claude-sonnet-4-20250514
+
+# Telegram Bot (optional — report delivery and conversational agent)
+TELEGRAM_BOT_TOKEN=your-bot-token-from-botfather
+TELEGRAM_CHAT_ID=your-chat-id
 ```
 
 ---
@@ -808,6 +946,9 @@ Each row maps to a discrete PR. Complete and merge each PR before starting the n
 | TBD | Report generation & output | Step 10 | `reporting/generator.py`, `reporting/formatter.py`, full pipeline wiring, report tests | Done |
 | TBD | CLI & run logging | Step 11 | `main.py` CLI, `run_log` lifecycle, structured logging, CLI tests | Done |
 | TBD | Polish & hardening | Step 12 | Error handling, partial runs, config table, `backfill_candles.py`, test review | Done |
+| TBD | LangChain/LangGraph agent migration | Step 13 | LangGraph agent, tool wrappers, SurrealDB memory, agent tests | Not Started |
+| TBD | Telegram bot integration | Step 14 | `telegram/bot.py`, `telegram/formatter.py`, report push notifications, Telegram tests | Not Started |
+| TBD | Fully agentic conversational platform | Step 15 | `agent/skills/`, `agent/mcp/`, `conversational.py`, Telegram message handling, MCP server, skill tests | Not Started |
 
 **Status values:** `Not Started` | `In Progress` | `In Review` | `Done`
 
@@ -821,3 +962,7 @@ Each row maps to a discrete PR. Complete and merge each PR before starting the n
 | **eToro API rate limits?** | Unknown - will discover in Step 2 and implement accordingly |
 | **Which instruments to track initially?** | Will configure a starter set of ~15-20 across all asset classes |
 | **Report retention policy?** | Keep all reports in SurrealDB indefinitely, markdown files in reports/ |
+| **Telegram bot hosting?** | Long-polling for MVP (no webhook server needed); move to webhook on AWS deployment |
+| **Conversation rate limits?** | Unknown — will need to handle Telegram API rate limits and LLM costs for interactive queries |
+| **Multi-user support for Telegram?** | Single-user only for MVP; restrict bot to one configured chat ID |
+| **MCP vs native LangGraph tools?** | Start with MCP for interoperability; evaluate if native LangGraph tools are simpler for the MVP |
