@@ -6,12 +6,27 @@ on:
     branches:
       - main
 
+# Cancel in-progress runs for the same PR / branch to save resources.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
   issues: write
 
 jobs:
-  pytest:
+  # -----------------------------------------------------------------
+  # Unit + integration tests
+  # All external calls (eToro API, LLM) are mocked; SurrealDB runs
+  # in-memory — no Docker or external services needed.
+  #
+  # To block PR merges on failure, add a branch-protection rule for
+  # the 'main' branch that requires the "tests" status check to pass:
+  #   Settings → Rules → Rulesets → New ruleset (or classic branch
+  #   protection) → Require status checks → add "tests".
+  # -----------------------------------------------------------------
+  tests:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -27,10 +42,11 @@ jobs:
           python -m pip install --upgrade pip
           pip install -e ".[dev]"
 
-      # Unit tests (mocked HTTP) and integration tests (in-memory SurrealDB)
-      # both run here — no Docker or external services needed.
-      - name: Run tests
-        run: pytest -v --tb=short
+      - name: Run unit tests
+        run: pytest -v --tb=short -m "not integration"
+
+      - name: Run integration / E2E tests
+        run: pytest -v --tb=short -m integration
 
       - name: Create issue on test failure
         if: failure()
