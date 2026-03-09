@@ -98,8 +98,40 @@ def main() -> None:
         if summary["errors"]:
             _log("### Errors\n")
             for err in summary["errors"]:
-                _log(f"- Instrument {err['instrument_id']}: `{err['error']}`")
+                if "instrument_id" in err:
+                    _log(f"- Instrument {err['instrument_id']}: `{err['error']}`")
+                else:
+                    _log(f"- {err.get('step', 'unknown')}: `{err['error']}`")
             _log("")
+
+        # ---- LLM Commentary ----
+        commentary = summary.get("commentary")
+        if commentary:
+            _log("## LLM Commentary\n")
+            _log(f"**{commentary['summary']}**\n")
+            _log(commentary["market_context"])
+            _log("")
+
+            if commentary.get("position_commentaries"):
+                _log("### Position Analysis\n")
+                for pc in commentary["position_commentaries"]:
+                    _log(f"**{pc['symbol']}**: {pc['commentary']}\n")
+
+            if commentary.get("recommendations"):
+                _log("### Recommendations\n")
+                _log("| Symbol | Action | Conviction | Reasoning |")
+                _log("|---|---|---|---|")
+                for r in commentary["recommendations"]:
+                    _log(
+                        f"| {r['symbol']} "
+                        f"| {r['action'].upper()} "
+                        f"| {r['conviction']} "
+                        f"| {r['reasoning']} |"
+                    )
+                _log("")
+        else:
+            _log("## LLM Commentary\n")
+            _log("*Skipped — LLM API key not configured or call failed.*\n")
 
         # ---- SurrealDB state AFTER pipeline ----
         _log("## SurrealDB State — After Pipeline\n")

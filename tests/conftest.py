@@ -23,9 +23,9 @@ def _test_settings() -> Settings:
         surreal_database="test_db",
         surreal_user="root",
         surreal_pass="root",
-        llm_provider="openai",
-        llm_api_key="test",
-        llm_model="gpt-4o",
+        llm_provider="gemini",
+        llm_api_key="",
+        llm_model="gemini-2.0-flash",
     )
 
 

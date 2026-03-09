@@ -23,9 +23,9 @@ class Settings(BaseSettings):
     surreal_user: str
     surreal_pass: str
 
-    llm_provider: str
-    llm_api_key: str
-    llm_model: str
+    llm_provider: str = "gemini"
+    llm_api_key: str = ""
+    llm_model: str = "gemini-2.0-flash"
 
 
 @lru_cache
