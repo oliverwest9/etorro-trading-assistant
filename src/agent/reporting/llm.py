@@ -229,7 +229,7 @@ def build_commentary_request(
         cash_available=snapshot.get("cash_available", 0.0),
         open_positions_count=snapshot.get("open_positions", 0),
         total_pnl=snapshot.get("total_pnl", 0.0),
-        positions=positions,
+        positions=sorted(positions, key=lambda p: p.instrument_id),
         sectors=sorted(seen_groups.values(), key=lambda s: s.group_name),
         news_headlines=headlines,
     )
@@ -442,6 +442,9 @@ def generate_commentary(
                 system_instruction=SYSTEM_PROMPT,
                 response_mime_type="application/json",
                 response_schema=CommentaryResponse,
+                temperature=0,
+                top_k=1,
+                seed=42,
             ),
         )
         raw_text = response.text

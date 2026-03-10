@@ -30,6 +30,7 @@ from agent.reporting.generator import (
     SnapshotSummary,
     generate_report,
     _compute_diff,
+    _is_major_change,
 )
 
 
@@ -337,7 +338,7 @@ def test_analysis_summary_symbol_resolution(db: SyncTemplate) -> None:
 
 
 def test_compute_diff_detects_action_change() -> None:
-    """Detects when a recommendation's action changes."""
+    """Detects when a recommendation's action changes — classified as major."""
     current = [
         RecommendationSummary(symbol="AAPL", action="reduce", conviction="high", reasoning="Bearish now."),
     ]
@@ -350,19 +351,20 @@ def test_compute_diff_detects_action_change() -> None:
     }
 
     diff = _compute_diff(current, previous_report)
-    assert len(diff.changed) == 1
-    assert diff.changed[0].symbol == "AAPL"
-    assert diff.changed[0].previous_action == "hold"
-    assert diff.changed[0].new_action == "reduce"
-    assert diff.changed[0].previous_conviction == "medium"
-    assert diff.changed[0].new_conviction == "high"
+    assert len(diff.major_changes) == 1
+    assert diff.major_changes[0].symbol == "AAPL"
+    assert diff.major_changes[0].previous_action == "hold"
+    assert diff.major_changes[0].new_action == "reduce"
+    assert diff.major_changes[0].previous_conviction == "medium"
+    assert diff.major_changes[0].new_conviction == "high"
+    assert diff.minor_changes == []
     assert diff.unchanged_count == 0
     assert diff.new_symbols == []
     assert diff.removed_symbols == []
 
 
 def test_compute_diff_detects_conviction_change() -> None:
-    """Detects when conviction changes but action stays the same."""
+    """Conviction jump of 2 levels (low->high) is major."""
     current = [
         RecommendationSummary(symbol="BTC", action="hold", conviction="high", reasoning="Stronger now."),
     ]
@@ -375,9 +377,10 @@ def test_compute_diff_detects_conviction_change() -> None:
     }
 
     diff = _compute_diff(current, previous_report)
-    assert len(diff.changed) == 1
-    assert diff.changed[0].previous_conviction == "low"
-    assert diff.changed[0].new_conviction == "high"
+    assert len(diff.major_changes) == 1
+    assert diff.major_changes[0].previous_conviction == "low"
+    assert diff.major_changes[0].new_conviction == "high"
+    assert diff.minor_changes == []
 
 
 def test_compute_diff_new_and_removed_symbols() -> None:
@@ -400,7 +403,8 @@ def test_compute_diff_new_and_removed_symbols() -> None:
     assert len(diff.new_symbols) == 1
     assert diff.new_symbols[0].symbol == "SNOW"
     assert diff.removed_symbols == ["GOOG"]
-    assert diff.changed == []
+    assert diff.major_changes == []
+    assert diff.minor_changes == []
 
 
 def test_compute_diff_no_changes() -> None:
@@ -418,7 +422,8 @@ def test_compute_diff_no_changes() -> None:
 
     diff = _compute_diff(current, previous_report)
     assert diff.unchanged_count == 1
-    assert diff.changed == []
+    assert diff.major_changes == []
+    assert diff.minor_changes == []
     assert diff.new_symbols == []
     assert diff.removed_symbols == []
 
@@ -437,3 +442,46 @@ def test_compute_diff_empty_previous() -> None:
     diff = _compute_diff(current, previous_report)
     assert len(diff.new_symbols) == 1
     assert diff.unchanged_count == 0
+
+
+# ---------------------------------------------------------------------------
+# _is_major_change tests
+# ---------------------------------------------------------------------------
+
+
+def test_is_major_change_action_flip() -> None:
+    """Any action change is major."""
+    assert _is_major_change("hold", "sell", "medium", "medium") is True
+    assert _is_major_change("reduce", "accumulate", "high", "high") is True
+
+
+def test_is_major_change_conviction_jump_two_levels() -> None:
+    """Same action but conviction jumps 2 levels is major."""
+    assert _is_major_change("hold", "hold", "low", "high") is True
+    assert _is_major_change("hold", "hold", "high", "low") is True
+
+
+def test_is_major_change_conviction_one_level_is_minor() -> None:
+    """Same action with only 1 level conviction shift is minor."""
+    assert _is_major_change("hold", "hold", "medium", "high") is False
+    assert _is_major_change("hold", "hold", "low", "medium") is False
+    assert _is_major_change("hold", "hold", "high", "medium") is False
+
+
+def test_compute_diff_single_conviction_step_is_minor() -> None:
+    """A 1-level conviction change goes into minor_changes, not major."""
+    current = [
+        RecommendationSummary(symbol="AAPL", action="hold", conviction="high", reasoning="Stronger."),
+    ]
+    previous_report = {
+        "run_id": "old-run",
+        "run_type": "market_open",
+        "recommendations": [
+            {"symbol": "AAPL", "action": "hold", "conviction": "medium", "reasoning": "Stable."},
+        ],
+    }
+
+    diff = _compute_diff(current, previous_report)
+    assert diff.major_changes == []
+    assert len(diff.minor_changes) == 1
+    assert diff.minor_changes[0].symbol == "AAPL"

@@ -117,7 +117,8 @@ class ReportDiff:
 
     previous_run_id: str
     previous_run_type: str
-    changed: list[RecommendationChange]
+    major_changes: list[RecommendationChange]
+    minor_changes: list[RecommendationChange]
     new_symbols: list[RecommendationSummary]
     removed_symbols: list[str]
     unchanged_count: int
@@ -257,6 +258,18 @@ def _build_commentary_summary(
     )
 
 
+_CONVICTION_RANK = {"low": 0, "medium": 1, "high": 2}
+
+
+def _is_major_change(prev_action: str, new_action: str, prev_conviction: str, new_conviction: str) -> bool:
+    """Return True if the change is major (action flip or 2-level conviction jump)."""
+    if prev_action != new_action:
+        return True
+    prev_rank = _CONVICTION_RANK.get(prev_conviction, 1)
+    new_rank = _CONVICTION_RANK.get(new_conviction, 1)
+    return abs(new_rank - prev_rank) >= 2
+
+
 def _compute_diff(
     current_recs: list[RecommendationSummary],
     previous_report: dict[str, Any],
@@ -270,7 +283,8 @@ def _compute_diff(
     for rec in current_recs:
         current_by_symbol[rec.symbol] = rec
 
-    changed: list[RecommendationChange] = []
+    major_changes: list[RecommendationChange] = []
+    minor_changes: list[RecommendationChange] = []
     new_symbols: list[RecommendationSummary] = []
     unchanged_count = 0
 
@@ -279,16 +293,18 @@ def _compute_diff(
         if prev is None:
             new_symbols.append(rec)
         elif prev["action"] != rec.action or prev["conviction"] != rec.conviction:
-            changed.append(
-                RecommendationChange(
-                    symbol=rec.symbol,
-                    previous_action=prev["action"],
-                    new_action=rec.action,
-                    previous_conviction=prev["conviction"],
-                    new_conviction=rec.conviction,
-                    reasoning=rec.reasoning,
-                )
+            change = RecommendationChange(
+                symbol=rec.symbol,
+                previous_action=prev["action"],
+                new_action=rec.action,
+                previous_conviction=prev["conviction"],
+                new_conviction=rec.conviction,
+                reasoning=rec.reasoning,
             )
+            if _is_major_change(prev["action"], rec.action, prev["conviction"], rec.conviction):
+                major_changes.append(change)
+            else:
+                minor_changes.append(change)
         else:
             unchanged_count += 1
 
@@ -299,7 +315,8 @@ def _compute_diff(
     return ReportDiff(
         previous_run_id=previous_report.get("run_id", "?"),
         previous_run_type=previous_report.get("run_type", "?"),
-        changed=changed,
+        major_changes=major_changes,
+        minor_changes=minor_changes,
         new_symbols=new_symbols,
         removed_symbols=removed_symbols,
         unchanged_count=unchanged_count,
