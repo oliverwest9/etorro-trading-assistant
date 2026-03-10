@@ -35,6 +35,9 @@ class PipelineState(TypedDict, total=False):
     # ---- Analysis stage outputs ----
     analyses_created: int
 
+    # ---- News stage outputs ----
+    news_context: list[dict[str, Any]] | None  # List of headline dicts or None
+
     # ---- Commentary stage outputs ----
     commentary: dict[str, Any] | None  # Parsed commentary dict or None
 

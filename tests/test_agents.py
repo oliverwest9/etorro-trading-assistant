@@ -191,17 +191,25 @@ class TestFallbackRouting:
     """Verify deterministic fallback order."""
 
     def test_starts_with_data(self) -> None:
-        available = {"data", "analysis", "commentary", "report"}
+        available = {"data", "analysis", "news", "commentary", "report"}
         assert _fallback_next([], available) == "data"
 
     def test_after_data(self) -> None:
-        available = {"data", "analysis", "commentary", "report"}
+        available = {"data", "analysis", "news", "commentary", "report"}
         assert _fallback_next(["data"], available) == "analysis"
 
+    def test_after_analysis(self) -> None:
+        available = {"data", "analysis", "news", "commentary", "report"}
+        assert _fallback_next(["data", "analysis"], available) == "news"
+
+    def test_after_news(self) -> None:
+        available = {"data", "analysis", "news", "commentary", "report"}
+        assert _fallback_next(["data", "analysis", "news"], available) == "commentary"
+
     def test_after_all(self) -> None:
-        available = {"data", "analysis", "commentary", "report"}
+        available = {"data", "analysis", "news", "commentary", "report"}
         assert _fallback_next(
-            ["data", "analysis", "commentary", "report"], available
+            ["data", "analysis", "news", "commentary", "report"], available
         ) == "done"
 
     def test_skips_unavailable(self) -> None:
@@ -245,7 +253,7 @@ class TestGraphBuilder:
     """Verify graph construction and deterministic execution."""
 
     def test_graph_compiles(self) -> None:
-        specialists = [_FinishSpecialist(n) for n in ("data", "analysis", "commentary", "report")]
+        specialists = [_FinishSpecialist(n) for n in ("data", "analysis", "news", "commentary", "report")]
         ctx = AgentContext(
             db=MagicMock(),
             client=MagicMock(),
@@ -257,7 +265,7 @@ class TestGraphBuilder:
         assert graph is not None
 
     def test_deterministic_routing_completes(self) -> None:
-        specialists = [_FinishSpecialist(n) for n in ("data", "analysis", "commentary", "report")]
+        specialists = [_FinishSpecialist(n) for n in ("data", "analysis", "news", "commentary", "report")]
         ctx = AgentContext(
             db=MagicMock(),
             client=MagicMock(),
@@ -273,7 +281,7 @@ class TestGraphBuilder:
             "completed_stages": [],
             "errors": [],
         })
-        assert set(result["completed_stages"]) == {"data", "analysis", "commentary", "report"}
+        assert set(result["completed_stages"]) == {"data", "analysis", "news", "commentary", "report"}
         assert result["next_specialist"] == "done"
 
     def test_specialists_run_in_correct_order(self) -> None:
@@ -283,7 +291,7 @@ class TestGraphBuilder:
             def run_procedural(self, state: dict[str, Any], ctx: AgentContext) -> None:
                 order.append(self.name)
 
-        specialists = [_TrackingSpecialist(n) for n in ("data", "analysis", "commentary", "report")]
+        specialists = [_TrackingSpecialist(n) for n in ("data", "analysis", "news", "commentary", "report")]
         ctx = AgentContext(
             db=MagicMock(),
             client=MagicMock(),
@@ -299,7 +307,7 @@ class TestGraphBuilder:
             "completed_stages": [],
             "errors": [],
         })
-        assert order == ["data", "analysis", "commentary", "report"]
+        assert order == ["data", "analysis", "news", "commentary", "report"]
 
 
 # ---------------------------------------------------------------------------
@@ -474,6 +482,193 @@ class TestAnalysisSpecialistProcedural:
         analyses = get_analyses_by_run_id(db, "run-1")
         assert len(analyses) == 1
         assert analyses[0]["trend"] in ("bullish", "bearish", "neutral")
+
+
+# ---------------------------------------------------------------------------
+# NewsSpecialist procedural
+# ---------------------------------------------------------------------------
+
+
+class TestNewsSpecialistProcedural:
+    """Test NewsSpecialist.run_procedural."""
+
+    def test_skips_without_api_key(self, test_settings: Settings) -> None:
+        from agent.agents.specialists.news import NewsSpecialist
+
+        test_settings.news_api_key = ""
+        ctx = AgentContext(
+            db=MagicMock(), client=MagicMock(), settings=test_settings,
+            run_id="run-1", run_type="market_open",
+        )
+        spec = NewsSpecialist()
+        state: dict[str, Any] = {}
+        spec.run_procedural(state, ctx)
+        result = spec.process_results(state, ctx)
+        assert result["news_context"] is None
+
+    def test_fetches_headlines(self, test_settings: Settings, httpx_mock) -> None:
+        from agent.agents.specialists.news import NewsSpecialist
+
+        test_settings.news_api_key = "test-news-key"
+        test_settings.news_api_url = "https://newsapi.example.com/v2/top-headlines"
+
+        httpx_mock.add_response(
+            url="https://newsapi.example.com/v2/top-headlines",
+            match_params={
+                "apiKey": "test-news-key",
+                "category": "business",
+                "pageSize": "10",
+            },
+            json={
+                "status": "ok",
+                "articles": [
+                    {
+                        "title": "Markets rally on trade deal",
+                        "description": "Global markets surged today.",
+                        "source": {"name": "Reuters"},
+                    },
+                    {
+                        "title": "Oil prices drop",
+                        "description": "Crude fell 3% overnight.",
+                        "source": {"name": "Bloomberg"},
+                    },
+                ],
+            },
+        )
+
+        ctx = AgentContext(
+            db=MagicMock(), client=MagicMock(), settings=test_settings,
+            run_id="run-1", run_type="market_open",
+        )
+        spec = NewsSpecialist()
+        state: dict[str, Any] = {}
+        spec.run_procedural(state, ctx)
+        result = spec.process_results(state, ctx)
+
+        assert result["news_context"] is not None
+        assert len(result["news_context"]) == 2
+        assert result["news_context"][0]["title"] == "Markets rally on trade deal"
+        assert result["news_context"][1]["source"] == "Bloomberg"
+
+    def test_handles_api_failure_gracefully(
+        self, test_settings: Settings, httpx_mock
+    ) -> None:
+        from agent.agents.specialists.news import NewsSpecialist
+
+        test_settings.news_api_key = "test-news-key"
+        test_settings.news_api_url = "https://newsapi.example.com/v2/top-headlines"
+
+        httpx_mock.add_response(
+            url="https://newsapi.example.com/v2/top-headlines",
+            match_params={
+                "apiKey": "test-news-key",
+                "category": "business",
+                "pageSize": "10",
+            },
+            status_code=500,
+        )
+
+        ctx = AgentContext(
+            db=MagicMock(), client=MagicMock(), settings=test_settings,
+            run_id="run-1", run_type="market_open",
+        )
+        spec = NewsSpecialist()
+        state: dict[str, Any] = {}
+        spec.run_procedural(state, ctx)
+        result = spec.process_results(state, ctx)
+        assert result["news_context"] is None
+
+    def test_specialist_properties(self) -> None:
+        from agent.agents.specialists.news import NewsSpecialist
+
+        spec = NewsSpecialist()
+        assert spec.name == "news"
+        assert "news" in spec.description.lower()
+        assert spec.get_system_prompt() != ""
+
+    def test_create_tools_returns_fetch_tool(self) -> None:
+        from agent.agents.specialists.news import NewsSpecialist
+
+        ctx = AgentContext(
+            db=MagicMock(), client=MagicMock(), settings=MagicMock(),
+            run_id="run-1", run_type="market_open",
+        )
+        spec = NewsSpecialist()
+        tools = spec.create_tools(ctx)
+        assert len(tools) == 1
+        assert tools[0].name == "fetch_news"
+
+
+# ---------------------------------------------------------------------------
+# fetch_news_headlines unit tests
+# ---------------------------------------------------------------------------
+
+
+class TestFetchNewsHeadlines:
+    """Test the fetch_news_headlines helper function."""
+
+    def test_parses_articles(self, httpx_mock) -> None:
+        from agent.agents.specialists.news import fetch_news_headlines
+
+        httpx_mock.add_response(
+            url="https://news.example.com/api",
+            match_params={
+                "apiKey": "key123",
+                "category": "business",
+                "pageSize": "10",
+            },
+            json={
+                "articles": [
+                    {
+                        "title": "Test headline",
+                        "description": "Test desc",
+                        "source": {"name": "TestSource"},
+                    },
+                ],
+            },
+        )
+        result = fetch_news_headlines("https://news.example.com/api", "key123")
+        assert len(result) == 1
+        assert result[0]["title"] == "Test headline"
+        assert result[0]["description"] == "Test desc"
+        assert result[0]["source"] == "TestSource"
+
+    def test_returns_empty_on_error(self, httpx_mock) -> None:
+        from agent.agents.specialists.news import fetch_news_headlines
+
+        httpx_mock.add_response(
+            url="https://news.example.com/api",
+            match_params={
+                "apiKey": "badkey",
+                "category": "business",
+                "pageSize": "10",
+            },
+            status_code=403,
+        )
+        result = fetch_news_headlines("https://news.example.com/api", "badkey")
+        assert result == []
+
+    def test_handles_missing_fields(self, httpx_mock) -> None:
+        from agent.agents.specialists.news import fetch_news_headlines
+
+        httpx_mock.add_response(
+            url="https://news.example.com/api",
+            match_params={
+                "apiKey": "key",
+                "category": "business",
+                "pageSize": "10",
+            },
+            json={
+                "articles": [
+                    {"title": "Headline only"},
+                ],
+            },
+        )
+        result = fetch_news_headlines("https://news.example.com/api", "key")
+        assert len(result) == 1
+        assert result[0]["title"] == "Headline only"
+        assert result[0]["description"] == ""
+        assert result[0]["source"] == ""
 
 
 # ---------------------------------------------------------------------------

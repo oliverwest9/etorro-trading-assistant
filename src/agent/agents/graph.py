@@ -29,7 +29,7 @@ _MAX_ITERATIONS = 15
 # Currently all specialists are procedural -- the LLM is only used for
 # orchestrator routing decisions.  Individual specialists can be removed
 # from this set later to enable ReAct-based execution.
-_PROCEDURAL_SPECIALISTS = {"data", "analysis", "commentary", "report"}
+_PROCEDURAL_SPECIALISTS = {"data", "analysis", "news", "commentary", "report"}
 
 
 # =====================================================================
@@ -70,9 +70,10 @@ def _build_orchestrator_prompt(specialists: list[BaseSpecialist]) -> str:
         "## Pipeline Rules\n"
         "1. Always start with 'data' to fetch portfolio and market data\n"
         "2. Run 'analysis' after data collection is complete\n"
-        "3. Run 'commentary' after analysis is complete\n"
-        "4. Run 'report' last to assemble and display the final report\n"
-        "5. Respond with 'done' when all stages are complete\n\n"
+        "3. Run 'news' after analysis to fetch world news context\n"
+        "4. Run 'commentary' after news and analysis are complete\n"
+        "5. Run 'report' last to assemble and display the final report\n"
+        "6. Respond with 'done' when all stages are complete\n\n"
         "## Adaptive Behavior\n"
         "- If analysis results indicate weak data, you may route back to "
         "'data' to fetch additional candles before proceeding\n"
@@ -90,7 +91,7 @@ def _build_orchestrator_prompt(specialists: list[BaseSpecialist]) -> str:
 # Fallback routing (deterministic, no LLM)
 # =====================================================================
 
-_FALLBACK_ORDER = ["data", "analysis", "commentary", "report"]
+_FALLBACK_ORDER = ["data", "analysis", "news", "commentary", "report"]
 
 
 def _fallback_next(completed: list[str], available: set[str]) -> str:
@@ -153,6 +154,7 @@ def _create_orchestrator_node(
             f"Instruments: {len(state.get('instrument_ids', []))}",
             f"Candle counts: {state.get('candle_counts', {})}",
             f"Analyses created: {state.get('analyses_created', 0)}",
+            f"News context: {'yes' if state.get('news_context') else 'no'}",
             f"Commentary: {'yes' if state.get('commentary') else 'no'}",
             f"Report: {'yes' if state.get('report') else 'no'}",
             f"Errors: {len(errors)}",
@@ -224,6 +226,10 @@ def _create_specialist_node(
         # Pass commentary data to report specialist
         if specialist.name == "report":
             specialist._commentary_dict = state.get("commentary")
+
+        # Pass news context to commentary specialist
+        if specialist.name == "commentary":
+            specialist._news_context = state.get("news_context")
 
         if model is None or specialist.name in _PROCEDURAL_SPECIALISTS:
             # Procedural: call specialist's run_procedural method
