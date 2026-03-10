@@ -6,6 +6,10 @@ change of the close price over ``window`` periods.
 A strong positive ROC signals bullish momentum; a strong negative
 ROC signals bearish momentum.  The ``threshold`` parameter controls
 where "neutral" begins.
+
+The default window of 50 daily candles (~2–3 months) and threshold
+of 5 % are tuned for long-term momentum assessment, filtering out
+short-term noise.
 """
 
 from __future__ import annotations
@@ -21,12 +25,15 @@ class MomentumIndicator:
     """Rate-of-change momentum indicator.
 
     Args:
-        window: Look-back periods for ROC calculation (default 10).
+        window: Look-back periods for ROC calculation (default 50).
+            Covers roughly 2–3 months of daily candles for long-term
+            momentum assessment.
         threshold: Minimum absolute ROC (%) to count as non-neutral
-            (default 2.0, i.e. ±2 %).
+            (default 5.0, i.e. ±5 %).  The wider neutral zone avoids
+            triggering on normal short-term fluctuations.
     """
 
-    def __init__(self, window: int = 10, threshold: float = 2.0) -> None:
+    def __init__(self, window: int = 50, threshold: float = 5.0) -> None:
         self._window = window
         self._threshold = threshold
 

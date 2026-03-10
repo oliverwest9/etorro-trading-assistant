@@ -6,6 +6,9 @@ whether the instrument is in an uptrend, downtrend, or neutral range.
 The algorithm compares a ``window`` of recent highs and lows to
 detect sequences of higher-highs + higher-lows (bullish) or
 lower-highs + lower-lows (bearish).
+
+The default window of 50 daily candles (~2–3 months) is tuned for
+long-term trend detection rather than short-term noise.
 """
 
 from __future__ import annotations
@@ -21,10 +24,12 @@ class TrendIndicator:
     """Detects trend direction via higher-highs / lower-lows patterns.
 
     Args:
-        window: Number of candles to examine for the pattern (default 10).
+        window: Number of candles to examine for the pattern (default 50).
+            The default covers roughly 2–3 months of daily candles,
+            suitable for identifying sustained long-term trends.
     """
 
-    def __init__(self, window: int = 10) -> None:
+    def __init__(self, window: int = 50) -> None:
         self._window = window
 
     @property
