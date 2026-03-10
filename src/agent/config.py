@@ -27,8 +27,7 @@ class Settings(BaseSettings):
     llm_api_key: str = ""
     llm_model: str = "gemini-2.0-flash"
 
-    news_api_url: str = "https://newsapi.org/v2/top-headlines"
-    news_api_key: str = ""
+    news_api_url: str = ""
 
 
 @lru_cache

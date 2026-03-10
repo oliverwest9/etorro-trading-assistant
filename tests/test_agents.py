@@ -488,14 +488,30 @@ class TestAnalysisSpecialistProcedural:
 # NewsSpecialist procedural
 # ---------------------------------------------------------------------------
 
+_RSS_FEED_XML = """\
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>BBC Business News</title>
+    <item>
+      <title>Markets rally on trade deal</title>
+      <description>Global markets surged today.</description>
+    </item>
+    <item>
+      <title>Oil prices drop</title>
+      <description>Crude fell 3% overnight.</description>
+    </item>
+  </channel>
+</rss>"""
+
 
 class TestNewsSpecialistProcedural:
     """Test NewsSpecialist.run_procedural."""
 
-    def test_skips_without_api_key(self, test_settings: Settings) -> None:
+    def test_skips_without_feed_url(self, test_settings: Settings) -> None:
         from agent.agents.specialists.news import NewsSpecialist
 
-        test_settings.news_api_key = ""
+        test_settings.news_api_url = ""
         ctx = AgentContext(
             db=MagicMock(), client=MagicMock(), settings=test_settings,
             run_id="run-1", run_type="market_open",
@@ -509,31 +525,11 @@ class TestNewsSpecialistProcedural:
     def test_fetches_headlines(self, test_settings: Settings, httpx_mock) -> None:
         from agent.agents.specialists.news import NewsSpecialist
 
-        test_settings.news_api_key = "test-news-key"
-        test_settings.news_api_url = "https://newsapi.example.com/v2/top-headlines"
+        test_settings.news_api_url = "https://rss.example.com/business.xml"
 
         httpx_mock.add_response(
-            url="https://newsapi.example.com/v2/top-headlines",
-            match_params={
-                "apiKey": "test-news-key",
-                "category": "business",
-                "pageSize": "10",
-            },
-            json={
-                "status": "ok",
-                "articles": [
-                    {
-                        "title": "Markets rally on trade deal",
-                        "description": "Global markets surged today.",
-                        "source": {"name": "Reuters"},
-                    },
-                    {
-                        "title": "Oil prices drop",
-                        "description": "Crude fell 3% overnight.",
-                        "source": {"name": "Bloomberg"},
-                    },
-                ],
-            },
+            url="https://rss.example.com/business.xml",
+            text=_RSS_FEED_XML,
         )
 
         ctx = AgentContext(
@@ -548,23 +544,18 @@ class TestNewsSpecialistProcedural:
         assert result["news_context"] is not None
         assert len(result["news_context"]) == 2
         assert result["news_context"][0]["title"] == "Markets rally on trade deal"
-        assert result["news_context"][1]["source"] == "Bloomberg"
+        assert result["news_context"][0]["source"] == "BBC Business News"
+        assert result["news_context"][1]["title"] == "Oil prices drop"
 
-    def test_handles_api_failure_gracefully(
+    def test_handles_feed_failure_gracefully(
         self, test_settings: Settings, httpx_mock
     ) -> None:
         from agent.agents.specialists.news import NewsSpecialist
 
-        test_settings.news_api_key = "test-news-key"
-        test_settings.news_api_url = "https://newsapi.example.com/v2/top-headlines"
+        test_settings.news_api_url = "https://rss.example.com/business.xml"
 
         httpx_mock.add_response(
-            url="https://newsapi.example.com/v2/top-headlines",
-            match_params={
-                "apiKey": "test-news-key",
-                "category": "business",
-                "pageSize": "10",
-            },
+            url="https://rss.example.com/business.xml",
             status_code=500,
         )
 
@@ -607,68 +598,71 @@ class TestNewsSpecialistProcedural:
 class TestFetchNewsHeadlines:
     """Test the fetch_news_headlines helper function."""
 
-    def test_parses_articles(self, httpx_mock) -> None:
+    def test_parses_rss_items(self, httpx_mock) -> None:
         from agent.agents.specialists.news import fetch_news_headlines
 
         httpx_mock.add_response(
-            url="https://news.example.com/api",
-            match_params={
-                "apiKey": "key123",
-                "category": "business",
-                "pageSize": "10",
-            },
-            json={
-                "articles": [
-                    {
-                        "title": "Test headline",
-                        "description": "Test desc",
-                        "source": {"name": "TestSource"},
-                    },
-                ],
-            },
+            url="https://rss.example.com/feed.xml",
+            text=_RSS_FEED_XML,
         )
-        result = fetch_news_headlines("https://news.example.com/api", "key123")
-        assert len(result) == 1
-        assert result[0]["title"] == "Test headline"
-        assert result[0]["description"] == "Test desc"
-        assert result[0]["source"] == "TestSource"
+        result = fetch_news_headlines("https://rss.example.com/feed.xml")
+        assert len(result) == 2
+        assert result[0]["title"] == "Markets rally on trade deal"
+        assert result[0]["description"] == "Global markets surged today."
+        assert result[0]["source"] == "BBC Business News"
 
-    def test_returns_empty_on_error(self, httpx_mock) -> None:
+    def test_returns_empty_on_http_error(self, httpx_mock) -> None:
         from agent.agents.specialists.news import fetch_news_headlines
 
         httpx_mock.add_response(
-            url="https://news.example.com/api",
-            match_params={
-                "apiKey": "badkey",
-                "category": "business",
-                "pageSize": "10",
-            },
-            status_code=403,
+            url="https://rss.example.com/feed.xml",
+            status_code=500,
         )
-        result = fetch_news_headlines("https://news.example.com/api", "badkey")
+        result = fetch_news_headlines("https://rss.example.com/feed.xml")
         assert result == []
 
-    def test_handles_missing_fields(self, httpx_mock) -> None:
+    def test_returns_empty_on_invalid_xml(self, httpx_mock) -> None:
         from agent.agents.specialists.news import fetch_news_headlines
 
         httpx_mock.add_response(
-            url="https://news.example.com/api",
-            match_params={
-                "apiKey": "key",
-                "category": "business",
-                "pageSize": "10",
-            },
-            json={
-                "articles": [
-                    {"title": "Headline only"},
-                ],
-            },
+            url="https://rss.example.com/feed.xml",
+            text="this is not xml",
         )
-        result = fetch_news_headlines("https://news.example.com/api", "key")
+        result = fetch_news_headlines("https://rss.example.com/feed.xml")
+        assert result == []
+
+    def test_handles_missing_description(self, httpx_mock) -> None:
+        from agent.agents.specialists.news import fetch_news_headlines
+
+        rss = """\
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>News Feed</title>
+    <item><title>Headline only</title></item>
+  </channel>
+</rss>"""
+        httpx_mock.add_response(
+            url="https://rss.example.com/feed.xml",
+            text=rss,
+        )
+        result = fetch_news_headlines("https://rss.example.com/feed.xml")
         assert len(result) == 1
         assert result[0]["title"] == "Headline only"
         assert result[0]["description"] == ""
-        assert result[0]["source"] == ""
+        assert result[0]["source"] == "News Feed"
+
+    def test_respects_max_items(self, httpx_mock) -> None:
+        from agent.agents.specialists.news import fetch_news_headlines
+
+        httpx_mock.add_response(
+            url="https://rss.example.com/feed.xml",
+            text=_RSS_FEED_XML,
+        )
+        result = fetch_news_headlines(
+            "https://rss.example.com/feed.xml", max_items=1,
+        )
+        assert len(result) == 1
 
 
 # ---------------------------------------------------------------------------
