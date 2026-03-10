@@ -69,7 +69,7 @@ def fetch_news_headlines(
         headlines.append({
             "title": article.get("title", ""),
             "description": article.get("description") or "",
-            "source": source.get("name", "") if isinstance(source, dict) else str(source),
+            "source": source.get("name", "") if isinstance(source, dict) else "",
         })
     return headlines
 
@@ -151,6 +151,6 @@ class NewsSpecialist(BaseSpecialist):
         ctx: AgentContext,
     ) -> dict[str, Any]:
         """Store fetched headlines in the pipeline state."""
-        headlines = getattr(self, "_headlines", None) or []
+        headlines = getattr(self, "_headlines", [])
         self._headlines = []
         return {"news_context": headlines if headlines else None}

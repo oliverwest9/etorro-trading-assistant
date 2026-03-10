@@ -214,15 +214,14 @@ def build_commentary_request(
             )
 
     # Build news headlines from context
-    headlines: list[NewsHeadline] = []
-    for item in (news_context or []):
-        headlines.append(
-            NewsHeadline(
-                title=item.get("title", ""),
-                description=item.get("description", ""),
-                source=item.get("source", ""),
-            )
+    headlines = [
+        NewsHeadline(
+            title=item.get("title", ""),
+            description=item.get("description", ""),
+            source=item.get("source", ""),
         )
+        for item in (news_context or [])
+    ]
 
     return CommentaryRequest(
         run_type=run_type,
