@@ -27,7 +27,6 @@ _DEFAULT_INFLATION_RATE_PCT = 3.5
 
 # Thresholds for position concentration warnings.
 _CONCENTRATION_WARN_PCT = 15.0
-_CONCENTRATION_DANGER_PCT = 20.0
 
 # Trading days in a year (used to annualise daily returns).
 _TRADING_DAYS_PER_YEAR = 252
