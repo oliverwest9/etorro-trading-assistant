@@ -317,7 +317,7 @@ def _sample_diff() -> ReportDiff:
     return ReportDiff(
         previous_run_id="prev-run-xyz",
         previous_run_type="market_close",
-        changed=[
+        major_changes=[
             RecommendationChange(
                 symbol="BTC",
                 previous_action="hold",
@@ -325,6 +325,16 @@ def _sample_diff() -> ReportDiff:
                 previous_conviction="low",
                 new_conviction="high",
                 reasoning="Bearish momentum intensified.",
+            ),
+        ],
+        minor_changes=[
+            RecommendationChange(
+                symbol="AAPL",
+                previous_action="hold",
+                new_action="hold",
+                previous_conviction="medium",
+                new_conviction="high",
+                reasoning="Conviction increased slightly.",
             ),
         ],
         new_symbols=[
@@ -347,10 +357,12 @@ def test_format_markdown_diff_shows_changes_section() -> None:
 
     assert "## Key Changes Since Last Run" in md
     assert "prev-run-xyz" in md
-    assert "### Recommendation Changes" in md
+    assert "### Major Changes" in md
     assert "BTC" in md
     assert "HOLD" in md
     assert "**SELL**" in md
+    assert "### Minor Changes" in md
+    assert "AAPL" in md
 
 
 def test_format_markdown_diff_shows_new_positions() -> None:
@@ -404,7 +416,8 @@ def test_format_markdown_diff_no_changes() -> None:
     no_changes_diff = ReportDiff(
         previous_run_id="prev-run",
         previous_run_type="market_open",
-        changed=[],
+        major_changes=[],
+        minor_changes=[],
         new_symbols=[],
         removed_symbols=[],
         unchanged_count=3,
@@ -427,6 +440,7 @@ def test_format_terminal_diff_shows_changes() -> None:
     output = _capture_terminal(report)
 
     assert "Key Changes" in output
+    assert "Major Changes" in output
     assert "BTC" in output
     assert "SELL" in output
 

@@ -38,6 +38,7 @@ def _create_routing_model(settings: Settings) -> ChatGoogleGenerativeAI | None:
     return ChatGoogleGenerativeAI(
         model=settings.llm_model,
         google_api_key=settings.llm_api_key,
+        temperature=0,
     )
 
 

@@ -77,16 +77,30 @@ def format_markdown(report: Report, *, verbose: bool = False) -> str:
                 f"(run `{report.diff.previous_run_id}`)*\n"
             )
 
-            if report.diff.changed:
-                lines.append("### Recommendation Changes\n")
+            if report.diff.major_changes:
+                lines.append("### Major Changes\n")
                 lines.append("| Symbol | Previous | Current | Conviction | Reasoning |")
                 lines.append("|---|---|---|---|---|")
-                for c in report.diff.changed:
+                for c in report.diff.major_changes:
                     prev_a = _ACTION_LABELS.get(c.previous_action, c.previous_action.upper())
                     new_a = _ACTION_LABELS.get(c.new_action, c.new_action.upper())
                     lines.append(
                         f"| {c.symbol} | {prev_a} ({c.previous_conviction}) "
                         f"| **{new_a}** ({c.new_conviction}) "
+                        f"| {c.new_conviction} | {c.reasoning} |"
+                    )
+                lines.append("")
+
+            if report.diff.minor_changes:
+                lines.append("### Minor Changes\n")
+                lines.append("| Symbol | Previous | Current | Conviction | Reasoning |")
+                lines.append("|---|---|---|---|---|")
+                for c in report.diff.minor_changes:
+                    prev_a = _ACTION_LABELS.get(c.previous_action, c.previous_action.upper())
+                    new_a = _ACTION_LABELS.get(c.new_action, c.new_action.upper())
+                    lines.append(
+                        f"| {c.symbol} | {prev_a} ({c.previous_conviction}) "
+                        f"| {new_a} ({c.new_conviction}) "
                         f"| {c.new_conviction} | {c.reasoning} |"
                     )
                 lines.append("")
@@ -108,7 +122,7 @@ def format_markdown(report: Report, *, verbose: bool = False) -> str:
                     lines.append(f"- {sym}")
                 lines.append("")
 
-            if not report.diff.changed and not report.diff.new_symbols and not report.diff.removed_symbols:
+            if not report.diff.major_changes and not report.diff.minor_changes and not report.diff.new_symbols and not report.diff.removed_symbols:
                 lines.append("*No changes — all recommendations unchanged.*\n")
 
             lines.append(f"*{report.diff.unchanged_count} recommendation(s) unchanged.*\n")
@@ -410,9 +424,9 @@ def _render_diff_to_console(console: Console, diff: ReportDiff) -> None:
     console.rule(f"[bold]Key Changes Since Last {prev_label}[/bold]")
     console.print()
 
-    if diff.changed:
+    if diff.major_changes:
         change_table = Table(
-            title="Recommendation Changes",
+            title="Major Changes",
             show_header=True,
             header_style="bold",
             border_style="dim",
@@ -422,7 +436,7 @@ def _render_diff_to_console(console: Console, diff: ReportDiff) -> None:
         change_table.add_column("Current")
         change_table.add_column("Reasoning", max_width=60)
 
-        for c in diff.changed:
+        for c in diff.major_changes:
             prev_color = _ACTION_COLORS.get(c.previous_action, "white")
             prev_label_a = _ACTION_LABELS.get(c.previous_action, c.previous_action.upper())
             new_color = _ACTION_COLORS.get(c.new_action, "white")
@@ -434,6 +448,30 @@ def _render_diff_to_console(console: Console, diff: ReportDiff) -> None:
                 c.reasoning,
             )
         console.print(change_table)
+        console.print()
+
+    if diff.minor_changes:
+        minor_table = Table(
+            title="Minor Changes",
+            show_header=True,
+            header_style="bold",
+            border_style="dim",
+        )
+        minor_table.add_column("Symbol", style="bold dim")
+        minor_table.add_column("Previous", style="dim")
+        minor_table.add_column("Current", style="dim")
+        minor_table.add_column("Reasoning", max_width=60, style="dim")
+
+        for c in diff.minor_changes:
+            prev_label_a = _ACTION_LABELS.get(c.previous_action, c.previous_action.upper())
+            new_label = _ACTION_LABELS.get(c.new_action, c.new_action.upper())
+            minor_table.add_row(
+                c.symbol,
+                f"{prev_label_a} ({c.previous_conviction})",
+                f"{new_label} ({c.new_conviction})",
+                c.reasoning,
+            )
+        console.print(minor_table)
         console.print()
 
     if diff.new_symbols:
@@ -466,7 +504,7 @@ def _render_diff_to_console(console: Console, diff: ReportDiff) -> None:
             console.print(f"    [dim]- {sym}[/dim]")
         console.print()
 
-    if not diff.changed and not diff.new_symbols and not diff.removed_symbols:
+    if not diff.major_changes and not diff.minor_changes and not diff.new_symbols and not diff.removed_symbols:
         console.print("  [dim]No changes — all recommendations unchanged.[/dim]")
         console.print()
 
