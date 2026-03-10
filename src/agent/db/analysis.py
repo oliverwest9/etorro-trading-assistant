@@ -30,6 +30,7 @@ def create_analysis(
     trend_strength: float,
     price_action: dict[str, Any],
     sector_context: dict[str, Any] | None = None,
+    risk_metrics: dict[str, Any] | None = None,
     raw_data: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Create a new analysis record.
@@ -43,6 +44,7 @@ def create_analysis(
         trend_strength: Trend strength from 0.0 to 1.0.
         price_action: Object with indicator details, support/resistance, etc.
         sector_context: Optional sector grouping context.
+        risk_metrics: Optional per-instrument risk metrics (volatility, drawdown, etc.).
         raw_data: Arbitrary additional analysis data.
 
     Returns:
@@ -58,6 +60,7 @@ def create_analysis(
         "trend_strength": trend_strength,
         "price_action": price_action,
         "sector_context": sector_context or {},
+        "risk_metrics": risk_metrics,
         "raw_data": raw_data or {},
     }
 
