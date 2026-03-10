@@ -63,13 +63,15 @@ def fetch_news_headlines(
         logger.warning("news_rss_no_channel")
         return []
 
-    feed_title = (channel.findtext("title") or "").strip()
+    feed_title = (channel.findtext("title") or "").strip() or "Unknown"
 
     headlines: list[dict[str, str]] = []
     for item in channel.findall("item"):
         if len(headlines) >= max_items:
             break
         title = (item.findtext("title") or "").strip()
+        if not title:
+            continue
         description = (item.findtext("description") or "").strip()
         headlines.append({
             "title": title,
