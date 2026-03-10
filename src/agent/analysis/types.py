@@ -100,6 +100,7 @@ class AnalysisResult:
     instrument_etoro_id: int
     price_action: PriceActionResult
     sector_context: SectorGroupResult | None = None
+    risk_metrics: "InstrumentRiskMetrics | None" = None
 
     def to_db_fields(self) -> dict[str, Any]:
         """Serialise to a dict matching the ``analysis`` table fields.
@@ -134,9 +135,20 @@ class AnalysisResult:
                 "avg_return_pct": sc.avg_return_pct,
             }
 
+        risk_obj: dict[str, Any] | None = None
+        if self.risk_metrics is not None:
+            rm = self.risk_metrics
+            risk_obj = {
+                "annualised_volatility": rm.annualised_volatility,
+                "max_drawdown_pct": rm.max_drawdown_pct,
+                "simple_return_pct": rm.simple_return_pct,
+                "risk_adjusted_return": rm.risk_adjusted_return,
+            }
+
         raw_data: dict[str, Any] = {
             "price_action": price_action_obj,
             "sector_context": sector_obj,
+            "risk_metrics": risk_obj,
         }
 
         return {
@@ -144,5 +156,83 @@ class AnalysisResult:
             "trend_strength": pa.trend_strength,
             "price_action": price_action_obj,
             "sector_context": sector_obj,
+            "risk_metrics": risk_obj,
             "raw_data": raw_data,
         }
+
+
+# =====================================================================
+# Risk / critic result types
+# =====================================================================
+
+
+@dataclass(frozen=True)
+class InstrumentRiskMetrics:
+    """Risk metrics for a single instrument.
+
+    Attributes:
+        annualised_volatility: Annualised daily-return volatility (%).
+        max_drawdown_pct: Maximum peak-to-trough drawdown (%).
+        simple_return_pct: Simple return over the candle window (%).
+        risk_adjusted_return: Annualised return / annualised volatility
+            (Sharpe-like ratio, without risk-free rate adjustment).
+    """
+
+    annualised_volatility: float
+    max_drawdown_pct: float
+    simple_return_pct: float
+    risk_adjusted_return: float
+
+
+@dataclass(frozen=True)
+class DiversificationAssessment:
+    """Portfolio diversification metrics.
+
+    Attributes:
+        hhi: Herfindahl-Hirschman Index (0–10 000).
+        concentration_rating: ``"well-diversified"``, ``"moderate"``,
+            or ``"concentrated"``.
+        top_position_weight_pct: Weight of the largest position (%).
+        overweight_positions: Instrument IDs exceeding the 15 % threshold.
+    """
+
+    hhi: float
+    concentration_rating: str
+    top_position_weight_pct: float
+    overweight_positions: list[int] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class PortfolioRiskSummary:
+    """Portfolio-level risk summary with inflation comparison.
+
+    Attributes:
+        weighted_return_pct: Position-weighted average return (%).
+        inflation_rate_pct: Benchmark inflation rate (%).
+        beats_inflation: Whether the portfolio return exceeds inflation.
+        inflation_delta_pct: Return minus inflation (%).
+        cash_allocation_pct: Cash as a percentage of total portfolio value.
+    """
+
+    weighted_return_pct: float
+    inflation_rate_pct: float
+    beats_inflation: bool
+    inflation_delta_pct: float
+    cash_allocation_pct: float
+
+
+@dataclass(frozen=True)
+class CriticResult:
+    """Complete financial-analyst risk assessment.
+
+    Attributes:
+        instrument_risks: Per-instrument risk metrics keyed by eToro ID.
+        diversification: Portfolio diversification assessment.
+        portfolio_summary: Overall portfolio risk summary.
+    """
+
+    instrument_risks: dict[int, InstrumentRiskMetrics] = field(
+        default_factory=dict
+    )
+    diversification: DiversificationAssessment | None = None
+    portfolio_summary: PortfolioRiskSummary | None = None

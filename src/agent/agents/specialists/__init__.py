@@ -12,9 +12,11 @@ from agent.agents.registry import register_specialist
 from agent.agents.specialists.analysis import AnalysisSpecialist
 from agent.agents.specialists.commentary import CommentarySpecialist
 from agent.agents.specialists.data import DataSpecialist
+from agent.agents.specialists.financial import FinancialAnalystSpecialist
 from agent.agents.specialists.report import ReportSpecialist
 
 register_specialist(DataSpecialist())
 register_specialist(AnalysisSpecialist())
+register_specialist(FinancialAnalystSpecialist())
 register_specialist(CommentarySpecialist())
 register_specialist(ReportSpecialist())

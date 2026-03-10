@@ -29,7 +29,7 @@ _MAX_ITERATIONS = 15
 # Currently all specialists are procedural -- the LLM is only used for
 # orchestrator routing decisions.  Individual specialists can be removed
 # from this set later to enable ReAct-based execution.
-_PROCEDURAL_SPECIALISTS = {"data", "analysis", "commentary", "report"}
+_PROCEDURAL_SPECIALISTS = {"data", "analysis", "financial", "commentary", "report"}
 
 
 # =====================================================================
@@ -70,9 +70,10 @@ def _build_orchestrator_prompt(specialists: list[BaseSpecialist]) -> str:
         "## Pipeline Rules\n"
         "1. Always start with 'data' to fetch portfolio and market data\n"
         "2. Run 'analysis' after data collection is complete\n"
-        "3. Run 'commentary' after analysis is complete\n"
-        "4. Run 'report' last to assemble and display the final report\n"
-        "5. Respond with 'done' when all stages are complete\n\n"
+        "3. Run 'financial' after analysis to assess risk and diversification\n"
+        "4. Run 'commentary' after financial analysis is complete\n"
+        "5. Run 'report' last to assemble and display the final report\n"
+        "6. Respond with 'done' when all stages are complete\n\n"
         "## Adaptive Behavior\n"
         "- If analysis results indicate weak data, you may route back to "
         "'data' to fetch additional candles before proceeding\n"
@@ -90,7 +91,7 @@ def _build_orchestrator_prompt(specialists: list[BaseSpecialist]) -> str:
 # Fallback routing (deterministic, no LLM)
 # =====================================================================
 
-_FALLBACK_ORDER = ["data", "analysis", "commentary", "report"]
+_FALLBACK_ORDER = ["data", "analysis", "financial", "commentary", "report"]
 
 
 def _fallback_next(completed: list[str], available: set[str]) -> str:
