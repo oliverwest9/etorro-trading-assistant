@@ -4,6 +4,10 @@ Identifies the most recent local maxima (resistance) and local minima
 (support) from the candle data.  A point is considered a swing high if
 it is higher than the ``order`` candles on either side; likewise for
 swing lows.
+
+The default order of 5 and max_levels of 5 are tuned for identifying
+major support/resistance levels over months of daily data, rather than
+short-term intraday pivots.
 """
 
 from __future__ import annotations
@@ -20,12 +24,13 @@ class LevelsIndicator:
 
     Args:
         order: Number of candles on each side required to confirm a
-            swing point (default 3).
+            swing point (default 5).  A higher order filters out minor
+            fluctuations, surfacing only significant long-term levels.
         max_levels: Maximum number of levels to return on each side
-            (default 3).
+            (default 5).
     """
 
-    def __init__(self, order: int = 3, max_levels: int = 3) -> None:
+    def __init__(self, order: int = 5, max_levels: int = 5) -> None:
         self._order = order
         self._max_levels = max_levels
 
