@@ -60,7 +60,7 @@ def configure_logging(
         ],
     )
 
-    handler = logging.StreamHandler(sys.stderr)
+    handler = logging.StreamHandler(sys.stdout)
     handler.setFormatter(formatter)
 
     root = logging.getLogger()

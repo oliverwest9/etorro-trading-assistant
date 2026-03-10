@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from typing import Generator
+from unittest.mock import patch
 
 import pytest
 from surrealdb.connections.sync_template import SyncTemplate
@@ -46,3 +47,10 @@ def db() -> Generator[SyncTemplate, None, None]:
     with get_connection(_test_settings()) as conn:
         apply_schema(conn)
         yield conn
+
+
+@pytest.fixture(autouse=True)
+def _no_routing_model() -> Generator[None, None, None]:
+    """Disable LLM routing in all tests so no real Gemini calls are made."""
+    with patch("agent.orchestrator._create_routing_model", return_value=None):
+        yield

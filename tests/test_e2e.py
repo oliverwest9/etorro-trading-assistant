@@ -232,9 +232,17 @@ def _mock_full_pipeline(
         url=f"{BASE}/market-data/instruments",
         json=_instruments_response(*instruments),
     )
+    # Crypto instruments (instrumentTypeID=10) get 200 candles (adaptive),
+    # others get 100.
+    crypto_ids = {
+        inst["instrumentID"]
+        for inst in instruments
+        if inst.get("instrumentTypeID") == 10
+    }
     for iid in instrument_ids:
+        count = 200 if iid in crypto_ids else 100
         httpx_mock.add_response(
-            url=f"{BASE}/market-data/instruments/{iid}/history/candles/desc/OneDay/100",
+            url=f"{BASE}/market-data/instruments/{iid}/history/candles/desc/OneDay/{count}",
             json=_candles_response(iid, candle_count),
         )
 
@@ -428,10 +436,10 @@ class TestGracefulDegradation:
             url=f"{BASE}/market-data/instruments/1001/history/candles/desc/OneDay/100",
             json=_candles_response(1001),
         )
-        # BTC candles fail (3 retries)
+        # BTC candles fail (3 retries, crypto gets 200 via adaptive count)
         for _ in range(3):
             httpx_mock.add_response(
-                url=f"{BASE}/market-data/instruments/1002/history/candles/desc/OneDay/100",
+                url=f"{BASE}/market-data/instruments/1002/history/candles/desc/OneDay/200",
                 status_code=500,
             )
 
