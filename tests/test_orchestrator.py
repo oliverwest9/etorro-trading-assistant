@@ -180,9 +180,17 @@ def _mock_full_pipeline(
         json=_instruments_response(*instruments),
     )
     # Candles for each instrument
+    # Crypto instruments (instrumentTypeID=10) get 200 candles (adaptive),
+    # others get 100.
+    crypto_ids = {
+        inst["instrumentID"]
+        for inst in instruments
+        if inst.get("instrumentTypeID") == 10
+    }
     for iid in instrument_ids:
+        count = 200 if iid in crypto_ids else 100
         httpx_mock.add_response(
-            url=f"https://example.com/market-data/instruments/{iid}/history/candles/desc/OneDay/100",
+            url=f"https://example.com/market-data/instruments/{iid}/history/candles/desc/OneDay/{count}",
             json=_candles_response(iid, candle_count),
         )
 
@@ -296,17 +304,17 @@ def test_run_data_pipeline_skips_failed_instrument(
         url="https://example.com/market-data/instruments/1001/history/candles/desc/OneDay/100",
         json=_candles_response(1001),
     )
-    # BTC candles fail with 500
+    # BTC candles fail with 500 (crypto gets 200 candles via adaptive count)
     httpx_mock.add_response(
-        url="https://example.com/market-data/instruments/1002/history/candles/desc/OneDay/100",
+        url="https://example.com/market-data/instruments/1002/history/candles/desc/OneDay/200",
         status_code=500,
     )
     httpx_mock.add_response(
-        url="https://example.com/market-data/instruments/1002/history/candles/desc/OneDay/100",
+        url="https://example.com/market-data/instruments/1002/history/candles/desc/OneDay/200",
         status_code=500,
     )
     httpx_mock.add_response(
-        url="https://example.com/market-data/instruments/1002/history/candles/desc/OneDay/100",
+        url="https://example.com/market-data/instruments/1002/history/candles/desc/OneDay/200",
         status_code=500,
     )
 
@@ -530,17 +538,17 @@ def test_run_data_pipeline_analysis_survives_instrument_failure(
         url="https://example.com/market-data/instruments/1001/history/candles/desc/OneDay/100",
         json=_candles_response(1001, 15),
     )
-    # BTC candles fail
+    # BTC candles fail (crypto gets 200 candles via adaptive count)
     httpx_mock.add_response(
-        url="https://example.com/market-data/instruments/1002/history/candles/desc/OneDay/100",
+        url="https://example.com/market-data/instruments/1002/history/candles/desc/OneDay/200",
         status_code=500,
     )
     httpx_mock.add_response(
-        url="https://example.com/market-data/instruments/1002/history/candles/desc/OneDay/100",
+        url="https://example.com/market-data/instruments/1002/history/candles/desc/OneDay/200",
         status_code=500,
     )
     httpx_mock.add_response(
-        url="https://example.com/market-data/instruments/1002/history/candles/desc/OneDay/100",
+        url="https://example.com/market-data/instruments/1002/history/candles/desc/OneDay/200",
         status_code=500,
     )
 

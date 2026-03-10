@@ -655,13 +655,13 @@ db/
 - Write tests comparing agent output to expected report structure
 
 **Acceptance Criteria:**
-- [ ] LangGraph agent runs the same data pipeline as `Orchestrator.run_data_pipeline()`
-- [ ] Agent uses tools to fetch portfolio, candles, and instrument metadata
-- [ ] Agent can query SurrealDB for historical context (previous reports, analyses)
-- [ ] Agent produces a report in the same format as the procedural pipeline
-- [ ] Agent demonstrates at least one adaptive decision (e.g. fetching extra history for volatile instruments)
-- [ ] All existing tests still pass — no regressions
-- [ ] New tests verify agent tool invocations and report output
+- [x] LangGraph agent runs the same data pipeline as `Orchestrator.run_data_pipeline()`
+- [x] Agent uses tools to fetch portfolio, candles, and instrument metadata
+- [x] Agent can query SurrealDB for historical context (previous reports, analyses)
+- [x] Agent produces a report in the same format as the procedural pipeline
+- [x] Agent demonstrates at least one adaptive decision (e.g. fetching extra history for volatile instruments)
+- [x] All existing tests still pass — no regressions
+- [x] New tests verify agent tool invocations and report output
 
 ### Step 14: Telegram Bot Integration
 
@@ -946,7 +946,7 @@ Each row maps to a discrete PR. Complete and merge each PR before starting the n
 | TBD | Report generation & output | Step 10 | `reporting/generator.py`, `reporting/formatter.py`, full pipeline wiring, report tests | Done |
 | TBD | CLI & run logging | Step 11 | `main.py` CLI, `run_log` lifecycle, structured logging, CLI tests | Done |
 | TBD | Polish & hardening | Step 12 | Error handling, partial runs, config table, `backfill_candles.py`, test review | Done |
-| TBD | LangChain/LangGraph agent migration | Step 13 | LangGraph agent, tool wrappers, SurrealDB memory, agent tests | Not Started |
+| TBD | LangChain/LangGraph agent migration | Step 13 | LangGraph agent, tool wrappers, SurrealDB memory, agent tests | Done |
 | TBD | Telegram bot integration | Step 14 | `telegram/bot.py`, `telegram/formatter.py`, report push notifications, Telegram tests | Not Started |
 | TBD | Fully agentic conversational platform | Step 15 | `agent/skills/`, `agent/mcp/`, `conversational.py`, Telegram message handling, MCP server, skill tests | Not Started |
 
