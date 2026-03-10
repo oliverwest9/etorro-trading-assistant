@@ -109,6 +109,7 @@ class CommentarySpecialist(BaseSpecialist):
                 snapshot=snapshot,
                 analyses=enriched_analyses,
                 instrument_map=inst_map_plain,
+                news_context=getattr(self, "_news_context", None),
             )
 
             # Store on instance for the next tool to use
@@ -310,6 +311,7 @@ class CommentarySpecialist(BaseSpecialist):
             snapshot=snapshot,
             analyses=enriched,
             instrument_map=inst_map,
+            news_context=state.get("news_context"),
         )
 
         # Generate commentary via ctx.generate_fn (patchable in tests)

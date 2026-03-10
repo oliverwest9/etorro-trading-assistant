@@ -197,6 +197,7 @@ class Orchestrator:
             "instrument_map": {},
             "candle_counts": {},
             "analyses_created": 0,
+            "news_context": None,
             "commentary": None,
             "report": None,
             "report_path": None,

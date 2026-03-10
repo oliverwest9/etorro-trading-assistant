@@ -199,17 +199,25 @@ class TestFallbackRouting:
     """Verify deterministic fallback order."""
 
     def test_starts_with_data(self) -> None:
-        available = {"data", "analysis", "commentary", "report"}
+        available = {"data", "analysis", "news", "commentary", "report"}
         assert _fallback_next([], available) == "data"
 
     def test_after_data(self) -> None:
-        available = {"data", "analysis", "commentary", "report"}
+        available = {"data", "analysis", "news", "commentary", "report"}
         assert _fallback_next(["data"], available) == "analysis"
 
+    def test_after_analysis(self) -> None:
+        available = {"data", "analysis", "news", "commentary", "report"}
+        assert _fallback_next(["data", "analysis"], available) == "news"
+
+    def test_after_news(self) -> None:
+        available = {"data", "analysis", "news", "commentary", "report"}
+        assert _fallback_next(["data", "analysis", "news"], available) == "commentary"
+
     def test_after_all(self) -> None:
-        available = {"data", "analysis", "commentary", "report"}
+        available = {"data", "analysis", "news", "commentary", "report"}
         assert _fallback_next(
-            ["data", "analysis", "commentary", "report"], available
+            ["data", "analysis", "news", "commentary", "report"], available
         ) == "done"
 
     def test_skips_unavailable(self) -> None:
@@ -253,7 +261,7 @@ class TestGraphBuilder:
     """Verify graph construction and deterministic execution."""
 
     def test_graph_compiles(self) -> None:
-        specialists = [_FinishSpecialist(n) for n in ("data", "analysis", "commentary", "report")]
+        specialists = [_FinishSpecialist(n) for n in ("data", "analysis", "news", "commentary", "report")]
         ctx = AgentContext(
             db=MagicMock(),
             client=MagicMock(),
@@ -265,7 +273,7 @@ class TestGraphBuilder:
         assert graph is not None
 
     def test_deterministic_routing_completes(self) -> None:
-        specialists = [_FinishSpecialist(n) for n in ("data", "analysis", "commentary", "report")]
+        specialists = [_FinishSpecialist(n) for n in ("data", "analysis", "news", "commentary", "report")]
         ctx = AgentContext(
             db=MagicMock(),
             client=MagicMock(),
@@ -281,7 +289,7 @@ class TestGraphBuilder:
             "completed_stages": [],
             "errors": [],
         })
-        assert set(result["completed_stages"]) == {"data", "analysis", "commentary", "report"}
+        assert set(result["completed_stages"]) == {"data", "analysis", "news", "commentary", "report"}
         assert result["next_specialist"] == "done"
 
     def test_specialists_run_in_correct_order(self) -> None:
@@ -291,7 +299,7 @@ class TestGraphBuilder:
             def run_procedural(self, state: dict[str, Any], ctx: AgentContext) -> None:
                 order.append(self.name)
 
-        specialists = [_TrackingSpecialist(n) for n in ("data", "analysis", "commentary", "report")]
+        specialists = [_TrackingSpecialist(n) for n in ("data", "analysis", "news", "commentary", "report")]
         ctx = AgentContext(
             db=MagicMock(),
             client=MagicMock(),
@@ -307,7 +315,7 @@ class TestGraphBuilder:
             "completed_stages": [],
             "errors": [],
         })
-        assert order == ["data", "analysis", "commentary", "report"]
+        assert order == ["data", "analysis", "news", "commentary", "report"]
 
 
 # ---------------------------------------------------------------------------
@@ -482,6 +490,187 @@ class TestAnalysisSpecialistProcedural:
         analyses = get_analyses_by_run_id(db, "run-1")
         assert len(analyses) == 1
         assert analyses[0]["trend"] in ("bullish", "bearish", "neutral")
+
+
+# ---------------------------------------------------------------------------
+# NewsSpecialist procedural
+# ---------------------------------------------------------------------------
+
+_RSS_FEED_XML = """\
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>BBC Business News</title>
+    <item>
+      <title>Markets rally on trade deal</title>
+      <description>Global markets surged today.</description>
+    </item>
+    <item>
+      <title>Oil prices drop</title>
+      <description>Crude fell 3% overnight.</description>
+    </item>
+  </channel>
+</rss>"""
+
+
+class TestNewsSpecialistProcedural:
+    """Test NewsSpecialist.run_procedural."""
+
+    def test_skips_without_feed_url(self, test_settings: Settings) -> None:
+        from agent.agents.specialists.news import NewsSpecialist
+
+        test_settings.news_api_url = ""
+        ctx = AgentContext(
+            db=MagicMock(), client=MagicMock(), settings=test_settings,
+            run_id="run-1", run_type="market_open",
+        )
+        spec = NewsSpecialist()
+        state: dict[str, Any] = {}
+        spec.run_procedural(state, ctx)
+        result = spec.process_results(state, ctx)
+        assert result["news_context"] is None
+
+    def test_fetches_headlines(self, test_settings: Settings, httpx_mock) -> None:
+        from agent.agents.specialists.news import NewsSpecialist
+
+        test_settings.news_api_url = "https://rss.example.com/business.xml"
+
+        httpx_mock.add_response(
+            url="https://rss.example.com/business.xml",
+            text=_RSS_FEED_XML,
+        )
+
+        ctx = AgentContext(
+            db=MagicMock(), client=MagicMock(), settings=test_settings,
+            run_id="run-1", run_type="market_open",
+        )
+        spec = NewsSpecialist()
+        state: dict[str, Any] = {}
+        spec.run_procedural(state, ctx)
+        result = spec.process_results(state, ctx)
+
+        assert result["news_context"] is not None
+        assert len(result["news_context"]) == 2
+        assert result["news_context"][0]["title"] == "Markets rally on trade deal"
+        assert result["news_context"][0]["source"] == "BBC Business News"
+        assert result["news_context"][1]["title"] == "Oil prices drop"
+
+    def test_handles_feed_failure_gracefully(
+        self, test_settings: Settings, httpx_mock
+    ) -> None:
+        from agent.agents.specialists.news import NewsSpecialist
+
+        test_settings.news_api_url = "https://rss.example.com/business.xml"
+
+        httpx_mock.add_response(
+            url="https://rss.example.com/business.xml",
+            status_code=500,
+        )
+
+        ctx = AgentContext(
+            db=MagicMock(), client=MagicMock(), settings=test_settings,
+            run_id="run-1", run_type="market_open",
+        )
+        spec = NewsSpecialist()
+        state: dict[str, Any] = {}
+        spec.run_procedural(state, ctx)
+        result = spec.process_results(state, ctx)
+        assert result["news_context"] is None
+
+    def test_specialist_properties(self) -> None:
+        from agent.agents.specialists.news import NewsSpecialist
+
+        spec = NewsSpecialist()
+        assert spec.name == "news"
+        assert "news" in spec.description.lower()
+        assert spec.get_system_prompt() != ""
+
+    def test_create_tools_returns_fetch_tool(self) -> None:
+        from agent.agents.specialists.news import NewsSpecialist
+
+        ctx = AgentContext(
+            db=MagicMock(), client=MagicMock(), settings=MagicMock(),
+            run_id="run-1", run_type="market_open",
+        )
+        spec = NewsSpecialist()
+        tools = spec.create_tools(ctx)
+        assert len(tools) == 1
+        assert tools[0].name == "fetch_news"
+
+
+# ---------------------------------------------------------------------------
+# fetch_news_headlines unit tests
+# ---------------------------------------------------------------------------
+
+
+class TestFetchNewsHeadlines:
+    """Test the fetch_news_headlines helper function."""
+
+    def test_parses_rss_items(self, httpx_mock) -> None:
+        from agent.agents.specialists.news import fetch_news_headlines
+
+        httpx_mock.add_response(
+            url="https://rss.example.com/feed.xml",
+            text=_RSS_FEED_XML,
+        )
+        result = fetch_news_headlines("https://rss.example.com/feed.xml")
+        assert len(result) == 2
+        assert result[0]["title"] == "Markets rally on trade deal"
+        assert result[0]["description"] == "Global markets surged today."
+        assert result[0]["source"] == "BBC Business News"
+
+    def test_returns_empty_on_http_error(self, httpx_mock) -> None:
+        from agent.agents.specialists.news import fetch_news_headlines
+
+        httpx_mock.add_response(
+            url="https://rss.example.com/feed.xml",
+            status_code=500,
+        )
+        result = fetch_news_headlines("https://rss.example.com/feed.xml")
+        assert result == []
+
+    def test_returns_empty_on_invalid_xml(self, httpx_mock) -> None:
+        from agent.agents.specialists.news import fetch_news_headlines
+
+        httpx_mock.add_response(
+            url="https://rss.example.com/feed.xml",
+            text="this is not xml",
+        )
+        result = fetch_news_headlines("https://rss.example.com/feed.xml")
+        assert result == []
+
+    def test_handles_missing_description(self, httpx_mock) -> None:
+        from agent.agents.specialists.news import fetch_news_headlines
+
+        rss = """\
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>News Feed</title>
+    <item><title>Headline only</title></item>
+  </channel>
+</rss>"""
+        httpx_mock.add_response(
+            url="https://rss.example.com/feed.xml",
+            text=rss,
+        )
+        result = fetch_news_headlines("https://rss.example.com/feed.xml")
+        assert len(result) == 1
+        assert result[0]["title"] == "Headline only"
+        assert result[0]["description"] == ""
+        assert result[0]["source"] == "News Feed"
+
+    def test_respects_max_items(self, httpx_mock) -> None:
+        from agent.agents.specialists.news import fetch_news_headlines
+
+        httpx_mock.add_response(
+            url="https://rss.example.com/feed.xml",
+            text=_RSS_FEED_XML,
+        )
+        result = fetch_news_headlines(
+            "https://rss.example.com/feed.xml", max_items=1,
+        )
+        assert len(result) == 1
 
 
 # ---------------------------------------------------------------------------

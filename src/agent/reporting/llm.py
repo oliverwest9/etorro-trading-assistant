@@ -100,6 +100,15 @@ class SectorOverview:
 
 
 @dataclass(frozen=True)
+class NewsHeadline:
+    """A single news headline for prompt context."""
+
+    title: str
+    description: str
+    source: str
+
+
+@dataclass(frozen=True)
 class CommentaryRequest:
     """All data needed to generate LLM commentary.
 
@@ -114,6 +123,7 @@ class CommentaryRequest:
     total_pnl: float
     positions: list[PositionData] = field(default_factory=list)
     sectors: list[SectorOverview] = field(default_factory=list)
+    news_headlines: list[NewsHeadline] = field(default_factory=list)
 
 
 # =====================================================================
@@ -127,6 +137,7 @@ def build_commentary_request(
     snapshot: dict[str, Any],
     analyses: list[dict[str, Any]],
     instrument_map: dict[int, dict[str, Any]],
+    news_context: list[dict[str, str]] | None = None,
 ) -> CommentaryRequest:
     """Assemble a ``CommentaryRequest`` from pipeline data.
 
@@ -144,6 +155,8 @@ def build_commentary_request(
             ``price_action``, ``sector_context``).
         instrument_map: Mapping of eToro instrument ID → instrument dict
             (keys: ``etoro_id``, ``symbol``, ``name``).
+        news_context: Optional list of headline dicts with ``title``,
+            ``description``, and ``source`` keys.
 
     Returns:
         A fully populated ``CommentaryRequest``.
@@ -200,6 +213,16 @@ def build_commentary_request(
                 avg_return_pct=sc.get("avg_return_pct", 0.0),
             )
 
+    # Build news headlines from context
+    headlines = [
+        NewsHeadline(
+            title=item.get("title", ""),
+            description=item.get("description", ""),
+            source=item.get("source", ""),
+        )
+        for item in (news_context or [])
+    ]
+
     return CommentaryRequest(
         run_type=run_type,
         total_value=snapshot.get("total_value", 0.0),
@@ -208,6 +231,7 @@ def build_commentary_request(
         total_pnl=snapshot.get("total_pnl", 0.0),
         positions=sorted(positions, key=lambda p: p.instrument_id),
         sectors=sorted(seen_groups.values(), key=lambda s: s.group_name),
+        news_headlines=headlines,
     )
 
 
@@ -288,6 +312,9 @@ too high (dragging returns) or too low (no room for opportunities).
 deteriorating long-term risk profiles before chasing short-term gains.
 - Avoid chasing short-term momentum unless the risk/reward is clearly \
 asymmetric over a multi-month horizon.
+- If world news headlines are provided, factor them into your market \
+context and recommendations where relevant.  Consider how geopolitical \
+events, economic data, or major corporate news may impact the positions.
 - Keep commentary concise but actionable with a multi-month perspective.
 
 Respond with valid JSON matching the provided schema.\
@@ -353,6 +380,19 @@ def format_prompt(request: CommentaryRequest) -> str:
                     sector_line += f" (group avg return: {p.sector_avg_return_pct:+.2f}%)"
                 lines.append(sector_line)
             lines.append("")
+
+    # News context
+    if request.news_headlines:
+        lines.append("## World News Headlines")
+        lines.append("")
+        for h in request.news_headlines:
+            line = f"- **{h.title}**"
+            if h.source:
+                line += f" ({h.source})"
+            lines.append(line)
+            if h.description:
+                lines.append(f"  {h.description}")
+        lines.append("")
 
     return "\n".join(lines)
 
