@@ -35,6 +35,9 @@ class PipelineState(TypedDict, total=False):
     # ---- Analysis stage outputs ----
     analyses_created: int
 
+    # ---- Financial analyst stage outputs ----
+    risk_assessment: dict[str, Any] | None
+
     # ---- News stage outputs ----
     news_context: list[dict[str, Any]] | None  # List of headline dicts or None
 

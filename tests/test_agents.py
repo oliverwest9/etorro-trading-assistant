@@ -148,10 +148,18 @@ class TestRegistry:
     """Verify specialist registration and lookup."""
 
     def setup_method(self) -> None:
+        # Save original registry state so other tests aren't affected
+        from agent.agents.registry import _REGISTRY
+
+        self._saved_registry = dict(_REGISTRY)
         clear_registry()
 
     def teardown_method(self) -> None:
+        # Restore original registry state (other tests depend on it)
+        from agent.agents.registry import _REGISTRY
+
         clear_registry()
+        _REGISTRY.update(self._saved_registry)
 
     def test_register_and_get(self) -> None:
         s = _DummySpecialist()
