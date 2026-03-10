@@ -272,7 +272,7 @@ low) and clear reasoning referencing the technical data. "Accumulate" \
 means gradually build a larger position over time.
 
 Guidelines:
-- Focus on long-term capital growth that beats inflation (~3-4 % p.a.). \
+- Focus on long-term capital growth that beats inflation (~3-4 % per annum). \
 Evaluate whether each position contributes to that goal over months to \
 years, not days.
 - Be specific — reference actual price levels, support/resistance, \
