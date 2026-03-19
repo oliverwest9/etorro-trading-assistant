@@ -7,7 +7,7 @@ import pytest
 
 from agent.config import Settings
 from agent.etoro.client import EToroClient, EToroRequestError
-from agent.etoro.portfolio import get_portfolio, get_trading_history
+from agent.etoro.portfolio import get_portfolio, get_trading_history, resolve_currency_symbol
 
 
 def _settings() -> Settings:
@@ -220,6 +220,19 @@ def test_get_portfolio_returns_positions(httpx_mock):
     assert pos.close_conversion_rate == 1.1
 
 
+def test_get_portfolio_parses_account_currency_id(httpx_mock):
+    """Verify accountCurrencyId is parsed from the portfolio response."""
+    httpx_mock.add_response(
+        url="https://example.com/trading/info/real/pnl",
+        json=SAMPLE_PNL_RESPONSE,
+    )
+
+    with EToroClient(_settings()) as client:
+        result = get_portfolio(client)
+
+    assert result.client_portfolio.account_currency_id == 1
+
+
 def test_get_portfolio_empty_positions(httpx_mock):
     """Empty portfolio returns valid structure with no positions."""
     httpx_mock.add_response(
@@ -412,3 +425,36 @@ def test_get_trading_history_handles_api_error(httpx_mock):
     with EToroClient(_settings(), backoff_base=0.001) as client:
         with pytest.raises(EToroRequestError):
             get_trading_history(client, min_date="2024-01-01")
+
+
+# =============================================================================
+# resolve_currency_symbol tests
+# =============================================================================
+
+
+class TestResolveCurrencySymbol:
+    """Tests for resolve_currency_symbol()."""
+
+    def test_usd_returns_dollar(self) -> None:
+        assert resolve_currency_symbol(1) == "$"
+
+    def test_eur_returns_euro(self) -> None:
+        assert resolve_currency_symbol(2) == "€"
+
+    def test_gbp_returns_pound(self) -> None:
+        assert resolve_currency_symbol(5) == "£"
+
+    def test_aud_returns_aud_symbol(self) -> None:
+        assert resolve_currency_symbol(4) == "A$"
+
+    def test_none_returns_fallback(self) -> None:
+        assert resolve_currency_symbol(None) == "£"
+
+    def test_none_with_custom_fallback(self) -> None:
+        assert resolve_currency_symbol(None, fallback="$") == "$"
+
+    def test_unknown_id_returns_fallback(self) -> None:
+        assert resolve_currency_symbol(999) == "£"
+
+    def test_unknown_id_with_custom_fallback(self) -> None:
+        assert resolve_currency_symbol(999, fallback="$") == "$"

@@ -115,10 +115,11 @@ class CommentarySpecialist(BaseSpecialist):
             # Store on instance for the next tool to use
             self._commentary_request = request
 
+            cs = getattr(self, "_currency_symbol", ctx.settings.currency_symbol)
             return (
                 f"Commentary request built: {len(request.positions)} positions, "
                 f"{len(request.sectors)} sectors, "
-                f"total_value={ctx.settings.currency_symbol}{request.total_value:,.2f}"
+                f"total_value={cs}{request.total_value:,.2f}"
             )
 
         @langchain_tool
@@ -134,7 +135,8 @@ class CommentarySpecialist(BaseSpecialist):
 
             try:
                 gen_fn = ctx.generate_fn or generate_commentary
-                response = gen_fn(request, ctx.settings)
+                cs = getattr(self, "_currency_symbol", ctx.settings.currency_symbol)
+                response = gen_fn(request, ctx.settings, currency_symbol=cs)
                 self._commentary_response = response
                 return (
                     f"Commentary generated:\n"
@@ -316,8 +318,9 @@ class CommentarySpecialist(BaseSpecialist):
 
         # Generate commentary via ctx.generate_fn (patchable in tests)
         gen_fn = ctx.generate_fn or generate_commentary
+        cs = getattr(self, "_currency_symbol", ctx.settings.currency_symbol)
         try:
-            response = gen_fn(request, ctx.settings)
+            response = gen_fn(request, ctx.settings, currency_symbol=cs)
         except Exception as exc:
             logger.warning("commentary_failed", error=str(exc))
             state.setdefault("errors", []).append({

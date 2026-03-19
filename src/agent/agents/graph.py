@@ -227,10 +227,12 @@ def _create_specialist_node(
         # Pass commentary data to report specialist
         if specialist.name == "report":
             specialist._commentary_dict = state.get("commentary")
+            specialist._currency_symbol = state.get("currency_symbol", ctx.settings.currency_symbol)
 
-        # Pass news context to commentary specialist
+        # Pass news context and currency to commentary specialist
         if specialist.name == "commentary":
             specialist._news_context = state.get("news_context")
+            specialist._currency_symbol = state.get("currency_symbol", ctx.settings.currency_symbol)
 
         if model is None or specialist.name in _PROCEDURAL_SPECIALISTS:
             # Procedural: call specialist's run_procedural method

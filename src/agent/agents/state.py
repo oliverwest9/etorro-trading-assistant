@@ -31,6 +31,7 @@ class PipelineState(TypedDict, total=False):
     instrument_ids: list[int]  # eToro instrument IDs from portfolio
     instrument_map: dict[int, Any]  # etoro_id → Instrument metadata
     candle_counts: dict[int, int]  # etoro_id → number of candles inserted
+    currency_symbol: str  # Resolved display currency (e.g. "£", "$")
 
     # ---- Analysis stage outputs ----
     analyses_created: int

@@ -85,12 +85,13 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     report = summary["report"]
+    cs = summary.get("currency_symbol", settings.currency_symbol)
 
     # Rich terminal output
-    format_terminal(report, verbose=args.verbose, currency_symbol=settings.currency_symbol)
+    format_terminal(report, verbose=args.verbose, currency_symbol=cs)
 
     # Save markdown report to file
-    md = format_markdown(report, verbose=args.verbose, currency_symbol=settings.currency_symbol)
+    md = format_markdown(report, verbose=args.verbose, currency_symbol=cs)
     reports_dir = Path("reports")
     reports_dir.mkdir(exist_ok=True)
     report_path = reports_dir / f"{ts_label}_{args.run_type}_pipeline.md"

@@ -197,6 +197,7 @@ class Orchestrator:
             "instrument_map": {},
             "candle_counts": {},
             "analyses_created": 0,
+            "currency_symbol": self._settings.currency_symbol,
             "news_context": None,
             "commentary": None,
             "report": None,
@@ -253,6 +254,7 @@ class Orchestrator:
             "report": result.get("report"),
             "errors": errors,
             "duration_ms": duration_ms,
+            "currency_symbol": result.get("currency_symbol", self._settings.currency_symbol),
         }
 
         logger.info("pipeline_complete", **summary)

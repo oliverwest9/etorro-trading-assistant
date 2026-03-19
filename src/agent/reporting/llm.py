@@ -411,6 +411,8 @@ def format_prompt(request: CommentaryRequest, *, currency_symbol: str = "£") ->
 def generate_commentary(
     request: CommentaryRequest,
     settings: Settings,
+    *,
+    currency_symbol: str | None = None,
 ) -> CommentaryResponse:
     """Send the commentary request to Google Gemini and parse the response.
 
@@ -420,6 +422,8 @@ def generate_commentary(
     Args:
         request: The assembled commentary request.
         settings: Application settings (provides API key and model name).
+        currency_symbol: Currency symbol override. When ``None``,
+            falls back to ``settings.currency_symbol``.
 
     Returns:
         Parsed ``CommentaryResponse``.
@@ -432,7 +436,8 @@ def generate_commentary(
 
     client = genai.Client(api_key=settings.llm_api_key)
 
-    prompt = format_prompt(request, currency_symbol=settings.currency_symbol)
+    cs = currency_symbol if currency_symbol is not None else settings.currency_symbol
+    prompt = format_prompt(request, currency_symbol=cs)
 
     logger.info(
         "llm_request",
