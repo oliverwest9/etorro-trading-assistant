@@ -118,7 +118,7 @@ class CommentarySpecialist(BaseSpecialist):
             return (
                 f"Commentary request built: {len(request.positions)} positions, "
                 f"{len(request.sectors)} sectors, "
-                f"total_value=£{request.total_value:,.2f}"
+                f"total_value={ctx.settings.currency_symbol}{request.total_value:,.2f}"
             )
 
         @langchain_tool

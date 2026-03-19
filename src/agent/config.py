@@ -29,6 +29,8 @@ class Settings(BaseSettings):
 
     news_api_url: str = ""
 
+    currency_symbol: str = "£"
+
 
 @lru_cache
 def get_settings() -> Settings:

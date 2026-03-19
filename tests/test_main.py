@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import ANY, MagicMock, patch
 
 import pytest
 
@@ -92,7 +92,7 @@ class TestMain:
 
         assert exit_code == 0
         mock_orch.run_data_pipeline.assert_called_once_with("market_open")
-        mock_format_term.assert_called_once_with(mock_report, verbose=False)
+        mock_format_term.assert_called_once_with(mock_report, verbose=False, currency_symbol=ANY)
 
     @patch("agent.main.configure_logging")
     @patch("agent.main.get_settings")
@@ -165,8 +165,8 @@ class TestMain:
 
             main(["--run-type", "market_close", "--verbose"])
 
-        mock_format_term.assert_called_once_with(mock_report, verbose=True)
-        mock_format_md.assert_called_once_with(mock_report, verbose=True)
+        mock_format_term.assert_called_once_with(mock_report, verbose=True, currency_symbol=ANY)
+        mock_format_md.assert_called_once_with(mock_report, verbose=True, currency_symbol=ANY)
 
     def test_invalid_run_type_exits(self) -> None:
         """An invalid --run-type causes argparse to exit."""
