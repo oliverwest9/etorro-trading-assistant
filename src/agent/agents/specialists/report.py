@@ -111,7 +111,7 @@ class ReportSpecialist(BaseSpecialist):
             if report is None:
                 return "ERROR: Must call assemble_report first."
 
-            markdown = format_markdown(report, verbose=verbose, currency_symbol=getattr(self, '_currency_symbol', ctx.settings.currency_symbol))
+            markdown = format_markdown(report, verbose=verbose, currency_symbol=self.get_currency_symbol(ctx))
 
             ts = datetime.now(tz=timezone.utc).strftime("%Y-%m-%d_%H%M%S")
             filename = f"{ts}_{report.run_type}_pipeline.md"
@@ -137,7 +137,7 @@ class ReportSpecialist(BaseSpecialist):
             if report is None:
                 return "ERROR: Must call assemble_report first."
 
-            format_terminal(report, verbose=verbose, currency_symbol=getattr(self, '_currency_symbol', ctx.settings.currency_symbol))
+            format_terminal(report, verbose=verbose, currency_symbol=self.get_currency_symbol(ctx))
             return "Report displayed in terminal."
 
         return [assemble_report, save_report, display_report]
@@ -170,7 +170,7 @@ class ReportSpecialist(BaseSpecialist):
         report = generate_report(pipeline_summary, ctx.db)
         self._report = report
 
-        cs = getattr(self, '_currency_symbol', ctx.settings.currency_symbol)
+        cs = self.get_currency_symbol(ctx)
         markdown = format_markdown(report, verbose=False, currency_symbol=cs)
 
         ts = datetime.now(tz=timezone.utc).strftime("%Y-%m-%d_%H%M%S")

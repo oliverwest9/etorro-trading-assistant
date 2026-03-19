@@ -261,7 +261,7 @@ class DataSpecialist(BaseSpecialist):
                 "instrument_ids": [],
                 "instrument_map": {},
                 "candle_counts": {},
-                "currency_symbol": getattr(self, "_currency_symbol", ctx.settings.currency_symbol),
+                "currency_symbol": self.get_currency_symbol(ctx),
             }
 
         snapshot_id = str(snapshot.get("id", ""))
@@ -293,5 +293,5 @@ class DataSpecialist(BaseSpecialist):
             "instrument_ids": instrument_ids,
             "instrument_map": instrument_map,
             "candle_counts": candle_counts,
-            "currency_symbol": getattr(self, "_currency_symbol", ctx.settings.currency_symbol),
+            "currency_symbol": self.get_currency_symbol(ctx),
         }

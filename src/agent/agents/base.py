@@ -94,3 +94,11 @@ class BaseSpecialist(ABC):
         raise NotImplementedError(
             f"Specialist '{self.name}' has no procedural implementation"
         )
+
+    def get_currency_symbol(self, ctx: AgentContext) -> str:
+        """Return the resolved currency symbol.
+
+        Prefers the value set by the graph node (populated from pipeline
+        state) and falls back to ``ctx.settings.currency_symbol``.
+        """
+        return getattr(self, "_currency_symbol", ctx.settings.currency_symbol)

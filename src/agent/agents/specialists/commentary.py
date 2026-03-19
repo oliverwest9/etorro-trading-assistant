@@ -115,7 +115,7 @@ class CommentarySpecialist(BaseSpecialist):
             # Store on instance for the next tool to use
             self._commentary_request = request
 
-            cs = getattr(self, "_currency_symbol", ctx.settings.currency_symbol)
+            cs = self.get_currency_symbol(ctx)
             return (
                 f"Commentary request built: {len(request.positions)} positions, "
                 f"{len(request.sectors)} sectors, "
@@ -135,7 +135,7 @@ class CommentarySpecialist(BaseSpecialist):
 
             try:
                 gen_fn = ctx.generate_fn or generate_commentary
-                cs = getattr(self, "_currency_symbol", ctx.settings.currency_symbol)
+                cs = self.get_currency_symbol(ctx)
                 response = gen_fn(request, ctx.settings, currency_symbol=cs)
                 self._commentary_response = response
                 return (
@@ -318,7 +318,7 @@ class CommentarySpecialist(BaseSpecialist):
 
         # Generate commentary via ctx.generate_fn (patchable in tests)
         gen_fn = ctx.generate_fn or generate_commentary
-        cs = getattr(self, "_currency_symbol", ctx.settings.currency_symbol)
+        cs = self.get_currency_symbol(ctx)
         try:
             response = gen_fn(request, ctx.settings, currency_symbol=cs)
         except Exception as exc:
