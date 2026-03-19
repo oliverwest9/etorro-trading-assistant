@@ -29,6 +29,9 @@ class Settings(BaseSettings):
 
     news_api_url: str = ""
 
+    telegram_bot_token: str = ""
+    telegram_chat_id: str = ""
+
 
 @lru_cache
 def get_settings() -> Settings:
