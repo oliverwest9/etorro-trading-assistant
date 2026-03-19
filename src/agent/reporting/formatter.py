@@ -55,10 +55,10 @@ def format_markdown(report: Report, *, verbose: bool = False) -> str:
     # ---- Portfolio overview ----
     lines.append("## Portfolio Overview\n")
     snap = report.snapshot
-    lines.append(f"- **Total value:** ${snap.total_value:,.2f}")
-    lines.append(f"- **Cash available:** ${snap.cash_available:,.2f}")
+    lines.append(f"- **Total value:** £{snap.total_value:,.2f}")
+    lines.append(f"- **Cash available:** £{snap.cash_available:,.2f}")
     lines.append(f"- **Open positions:** {snap.open_positions}")
-    lines.append(f"- **Total P&L:** ${snap.total_pnl:,.2f}")
+    lines.append(f"- **Total P&L:** £{snap.total_pnl:,.2f}")
     lines.append("")
 
     # ---- LLM Commentary ----
@@ -182,10 +182,10 @@ def format_markdown(report: Report, *, verbose: bool = False) -> str:
             lines.append("| # | Symbol | Direction | Open Rate | Amount | Units | P&L |")
             lines.append("|---:|---|---|---:|---:|---:|---:|")
             for idx, pos in enumerate(report.snapshot.positions, 1):
-                pnl_str = f"${pos.pnl:,.2f}" if pos.pnl is not None else "—"
+                pnl_str = f"£{pos.pnl:,.2f}" if pos.pnl is not None else "—"
                 lines.append(
                     f"| {idx} | {pos.symbol} | {pos.direction} "
-                    f"| {pos.open_rate:.4f} | ${pos.amount:,.2f} "
+                    f"| {pos.open_rate:.4f} | £{pos.amount:,.2f} "
                     f"| {pos.units:.4f} | {pnl_str} |"
                 )
             lines.append("")
@@ -261,10 +261,10 @@ def _render_to_console(
     snap = report.snapshot
     pnl_color = "green" if snap.total_pnl >= 0 else "red"
     portfolio_text = (
-        f"[bold]Total value:[/bold] ${snap.total_value:,.2f}    "
-        f"[bold]Cash:[/bold] ${snap.cash_available:,.2f}    "
+        f"[bold]Total value:[/bold] £{snap.total_value:,.2f}    "
+        f"[bold]Cash:[/bold] £{snap.cash_available:,.2f}    "
         f"[bold]Positions:[/bold] {snap.open_positions}    "
-        f"[bold]P&L:[/bold] [{pnl_color}]${snap.total_pnl:,.2f}[/{pnl_color}]"
+        f"[bold]P&L:[/bold] [{pnl_color}]£{snap.total_pnl:,.2f}[/{pnl_color}]"
     )
     console.print(Panel(portfolio_text, title="Portfolio", border_style="cyan"))
 
@@ -365,7 +365,7 @@ def _render_to_console(
             pos_table.add_column("P&L", justify="right")
 
             for idx, pos in enumerate(report.snapshot.positions, 1):
-                pnl_str = f"${pos.pnl:,.2f}" if pos.pnl is not None else "—"
+                pnl_str = f"£{pos.pnl:,.2f}" if pos.pnl is not None else "—"
                 pnl_color = ""
                 if pos.pnl is not None:
                     pnl_color = "green" if pos.pnl >= 0 else "red"
@@ -375,7 +375,7 @@ def _render_to_console(
                     pos.symbol,
                     pos.direction,
                     f"{pos.open_rate:.4f}",
-                    f"${pos.amount:,.2f}",
+                    f"£{pos.amount:,.2f}",
                     f"{pos.units:.4f}",
                     pnl_str,
                 )

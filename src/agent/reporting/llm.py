@@ -280,7 +280,8 @@ def _extract_pnl(position: dict[str, Any]) -> float | None:
 
 SYSTEM_PROMPT = """\
 You are an experienced portfolio advisor analysing an eToro portfolio \
-with a long-term, inflation-beating investment strategy. You have been \
+with a long-term, inflation-beating investment strategy. The portfolio \
+is denominated in GBP (British pounds). You have been \
 given the current portfolio state and technical analysis data for each \
 position. Your job is to:
 
@@ -296,7 +297,7 @@ low) and clear reasoning referencing the technical data. "Accumulate" \
 means gradually build a larger position over time.
 
 Guidelines:
-- Focus on long-term capital growth that beats inflation (~3-4 % per annum). \
+- Focus on long-term capital growth that beats UK inflation (~3-4 % per annum). \
 Evaluate whether each position contributes to that goal over months to \
 years, not days.
 - Be specific — reference actual price levels, support/resistance, \
@@ -337,10 +338,10 @@ def format_prompt(request: CommentaryRequest) -> str:
 
     # Portfolio overview
     lines.append("## Portfolio Overview")
-    lines.append(f"- Total value: ${request.total_value:,.2f}")
-    lines.append(f"- Cash available: ${request.cash_available:,.2f}")
+    lines.append(f"- Total value: £{request.total_value:,.2f}")
+    lines.append(f"- Cash available: £{request.cash_available:,.2f}")
     lines.append(f"- Open positions: {request.open_positions_count}")
-    lines.append(f"- Total P&L: ${request.total_pnl:,.2f}")
+    lines.append(f"- Total P&L: £{request.total_pnl:,.2f}")
     lines.append("")
 
     # Sector overview
@@ -363,16 +364,16 @@ def format_prompt(request: CommentaryRequest) -> str:
         for i, p in enumerate(request.positions, 1):
             lines.append(f"### {i}. {p.symbol} — {p.name}")
             lines.append(f"- Direction: {p.direction}")
-            lines.append(f"- Open rate: ${p.open_rate:,.4f}")
-            lines.append(f"- Amount invested: ${p.amount:,.2f}")
+            lines.append(f"- Open rate: £{p.open_rate:,.4f}")
+            lines.append(f"- Amount invested: £{p.amount:,.2f}")
             lines.append(f"- Units: {p.units:.4f}")
             if p.pnl is not None:
-                lines.append(f"- Unrealised P&L: ${p.pnl:,.2f}")
+                lines.append(f"- Unrealised P&L: £{p.pnl:,.2f}")
             lines.append(f"- Trend: {p.trend} (strength: {p.trend_strength:.2f})")
             if p.support is not None:
-                lines.append(f"- Support: ${p.support:,.4f}")
+                lines.append(f"- Support: £{p.support:,.4f}")
             if p.resistance is not None:
-                lines.append(f"- Resistance: ${p.resistance:,.4f}")
+                lines.append(f"- Resistance: £{p.resistance:,.4f}")
             lines.append(f"- Momentum: {p.momentum_signal}")
             if p.sector_group:
                 sector_line = f"- Sector: {p.sector_group}"
