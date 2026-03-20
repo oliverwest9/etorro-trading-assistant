@@ -106,6 +106,8 @@ class NewsHeadline:
     title: str
     description: str
     source: str
+    published: str = ""
+    categories: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -137,7 +139,7 @@ def build_commentary_request(
     snapshot: dict[str, Any],
     analyses: list[dict[str, Any]],
     instrument_map: dict[int, dict[str, Any]],
-    news_context: list[dict[str, str]] | None = None,
+    news_context: list[dict[str, Any]] | None = None,
 ) -> CommentaryRequest:
     """Assemble a ``CommentaryRequest`` from pipeline data.
 
@@ -219,6 +221,8 @@ def build_commentary_request(
             title=item.get("title", ""),
             description=item.get("description", ""),
             source=item.get("source", ""),
+            published=item.get("published", ""),
+            categories=tuple(item.get("categories", [])),
         )
         for item in (news_context or [])
     ]
@@ -389,7 +393,13 @@ def format_prompt(request: CommentaryRequest) -> str:
             line = f"- **{h.title}**"
             if h.source:
                 line += f" ({h.source})"
+            if h.published:
+                # Show just the date portion for readability
+                date_display = h.published[:10] if len(h.published) >= 10 else h.published
+                line += f" [{date_display}]"
             lines.append(line)
+            if h.categories:
+                lines.append(f"  Topics: {', '.join(h.categories)}")
             if h.description:
                 lines.append(f"  {h.description}")
         lines.append("")
