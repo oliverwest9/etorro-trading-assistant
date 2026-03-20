@@ -22,7 +22,7 @@ import structlog
 
 from agent.config import get_settings
 from agent.orchestrator import Orchestrator, PipelineError
-from agent.reporting import format_markdown, format_terminal
+from agent.reporting import Report, format_markdown, format_terminal
 from agent.reporting.cache import cache_report
 from agent.telegram import TelegramClient, TelegramRequestError
 from agent.utils.logging import configure_logging
@@ -60,10 +60,16 @@ def build_parser() -> argparse.ArgumentParser:
         default=False,
         help="Send a summary of the run report to Telegram.",
     )
+    parser.add_argument(
+        "--cache-report",
+        action="store_true",
+        default=False,
+        help="Cache the generated report JSON for local iteration tooling.",
+    )
     return parser
 
 
-def _build_telegram_summary(report, summary: dict[str, object]) -> str:
+def _build_telegram_summary(report: Report) -> str:
     """Build a conversational Telegram summary with market context and recommendations."""
     def _to_float(value: object, default: float = 0.0) -> float:
         try:
@@ -80,7 +86,7 @@ def _build_telegram_summary(report, summary: dict[str, object]) -> str:
         action = rec.action.upper()
         action_counts[action] = action_counts.get(action, 0) + 1
 
-    preferred_action_order = ["SELL", "REDUCE", "HOLD", "ACCUMULATE", "BUY"]
+    preferred_action_order = ["SELL", "REDUCE", "HOLD", "ACCUMULATE", "INCREASE"]
     ordered_actions = [
         action for action in preferred_action_order if action in action_counts
     ]
@@ -88,7 +94,7 @@ def _build_telegram_summary(report, summary: dict[str, object]) -> str:
         sorted(action for action in action_counts if action not in preferred_action_order)
     )
 
-    # Skip HOLD actions - they're not actionable, only show SELL/REDUCE/ACCUMULATE/BUY
+    # Skip HOLD actions - they're not actionable, only show SELL/REDUCE/ACCUMULATE/INCREASE
     action_overview_lines = [
         f"- {action}: {action_counts[action]}" for action in ordered_actions if action != "HOLD"
     ]
@@ -225,14 +231,14 @@ def main(argv: list[str] | None = None) -> int:
     report_path.write_text(md, encoding="utf-8")
     print(f"\nReport saved to: {report_path}")
 
-    # Cache report data for rapid Telegram message format iteration
-    try:
-        cache_file = cache_report(report)
-        print(f"Report cached to: {cache_file}")
-    except Exception as e:
-        logger.warning("cache_report_failed", error=str(e))
+    if args.cache_report:
+        try:
+            cache_file = cache_report(report)
+            print(f"Report cached to: {cache_file}")
+        except Exception as exc:
+            logger.warning("cache_report_failed", error=str(exc))
 
-    telegram_message = _build_telegram_summary(report, summary)
+    telegram_message = _build_telegram_summary(report)
     _maybe_send_telegram_summary(
         send_requested=args.send_telegram,
         bot_token=settings.telegram_bot_token,

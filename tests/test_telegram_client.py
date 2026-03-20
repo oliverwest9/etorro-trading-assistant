@@ -1,3 +1,4 @@
+import httpx
 import pytest
 
 from agent.telegram.client import TelegramClient, TelegramRequestError
@@ -84,3 +85,31 @@ def test_raises_after_retry_exhaustion(httpx_mock, monkeypatch) -> None:
 
     assert "503" in str(excinfo.value)
     assert len(httpx_mock.get_requests()) == 3
+
+
+def test_raises_when_telegram_returns_ok_false(httpx_mock) -> None:
+    httpx_mock.add_response(
+        url="https://api.telegram.org/bottest-token/sendMessage",
+        status_code=200,
+        json={"ok": False, "description": "Bad Request: chat not found"},
+    )
+
+    with TelegramClient("test-token") as client:
+        with pytest.raises(TelegramRequestError) as excinfo:
+            client.send_message(chat_id="missing", text="hello")
+
+    assert "chat not found" in str(excinfo.value)
+
+
+def test_request_error_does_not_leak_bot_token(monkeypatch) -> None:
+    request = httpx.Request("POST", "https://api.telegram.org/bottest-token/sendMessage")
+    error = httpx.ConnectError("request to https://api.telegram.org/bottest-token/sendMessage failed", request=request)
+    monkeypatch.setattr("agent.telegram.client.time.sleep", lambda _: None)
+
+    with TelegramClient("test-token", max_retries=1) as client:
+        monkeypatch.setattr(client._client, "request", lambda *args, **kwargs: (_ for _ in ()).throw(error))
+        with pytest.raises(TelegramRequestError) as excinfo:
+            client.send_message(chat_id="1234", text="hello")
+
+    assert "test-token" not in str(excinfo.value)
+    assert "network error" in str(excinfo.value).lower()
