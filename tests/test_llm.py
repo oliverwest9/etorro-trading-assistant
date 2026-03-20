@@ -14,6 +14,7 @@ import pytest
 from agent.reporting.llm import (
     CommentaryRequest,
     CommentaryResponse,
+    NewsHeadline,
     PositionCommentary,
     PositionData,
     Recommendation,
@@ -294,6 +295,51 @@ class TestBuildCommentaryRequest:
         assert req.positions[0].name == "Unknown"
         assert req.positions[0].direction == "Short"
 
+    def test_builds_enriched_news_headlines(self):
+        """News context with published dates and categories maps correctly."""
+        req = build_commentary_request(
+            run_type="market_open",
+            snapshot=_make_snapshot(),
+            analyses=_make_analyses(),
+            instrument_map=_make_instrument_map(),
+            news_context=[
+                {
+                    "title": "Rate hike expected",
+                    "description": "Central bank meets today.",
+                    "source": "Reuters",
+                    "published": "2024-01-15T14:00:00+00:00",
+                    "categories": ["Economy", "Central Banks"],
+                },
+            ],
+        )
+
+        assert len(req.news_headlines) == 1
+        h = req.news_headlines[0]
+        assert h.title == "Rate hike expected"
+        assert h.published == "2024-01-15T14:00:00+00:00"
+        assert h.categories == ("Economy", "Central Banks")
+
+    def test_builds_news_headlines_with_missing_enrichment(self):
+        """Legacy news context dicts (no published/categories) still work."""
+        req = build_commentary_request(
+            run_type="market_open",
+            snapshot=_make_snapshot(),
+            analyses=_make_analyses(),
+            instrument_map=_make_instrument_map(),
+            news_context=[
+                {
+                    "title": "Simple headline",
+                    "description": "Some text.",
+                    "source": "BBC",
+                },
+            ],
+        )
+
+        assert len(req.news_headlines) == 1
+        h = req.news_headlines[0]
+        assert h.published == ""
+        assert h.categories == ()
+
 
 # =====================================================================
 # format_prompt() tests
@@ -368,6 +414,69 @@ class TestFormatPrompt:
         prompt = format_prompt(req)
 
         assert "Market Close" in prompt
+
+    def test_news_headlines_include_published_date(self):
+        req = CommentaryRequest(
+            run_type="market_open",
+            total_value=100.0,
+            cash_available=10.0,
+            open_positions_count=0,
+            total_pnl=0.0,
+            news_headlines=[
+                NewsHeadline(
+                    title="Rate hike expected",
+                    description="Central bank meets today.",
+                    source="Reuters",
+                    published="2024-01-15T14:00:00+00:00",
+                ),
+            ],
+        )
+        prompt = format_prompt(req)
+
+        assert "World News Headlines" in prompt
+        assert "Rate hike expected" in prompt
+        assert "2024-01-15" in prompt
+        assert "(Reuters)" in prompt
+
+    def test_news_headlines_include_categories(self):
+        req = CommentaryRequest(
+            run_type="market_open",
+            total_value=100.0,
+            cash_available=10.0,
+            open_positions_count=0,
+            total_pnl=0.0,
+            news_headlines=[
+                NewsHeadline(
+                    title="Oil supply cuts",
+                    description="OPEC reduces output.",
+                    source="BBC",
+                    categories=("Energy", "Commodities"),
+                ),
+            ],
+        )
+        prompt = format_prompt(req)
+
+        assert "Topics: Energy, Commodities" in prompt
+
+    def test_news_headlines_without_optional_fields(self):
+        req = CommentaryRequest(
+            run_type="market_open",
+            total_value=100.0,
+            cash_available=10.0,
+            open_positions_count=0,
+            total_pnl=0.0,
+            news_headlines=[
+                NewsHeadline(
+                    title="Simple headline",
+                    description="",
+                    source="",
+                ),
+            ],
+        )
+        prompt = format_prompt(req)
+
+        assert "Simple headline" in prompt
+        assert "Topics:" not in prompt
 
 
 # =====================================================================

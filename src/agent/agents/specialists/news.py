@@ -1,17 +1,22 @@
 """News specialist agent.
 
-Fetches world news headlines from a free RSS feed and provides news
-context for the commentary agent.  Runs after analysis and before
-commentary so that LLM-generated reports can reference current events.
+Fetches world news headlines from one or more free RSS feeds and
+provides news context for the commentary agent.  Runs after analysis
+and before commentary so that LLM-generated reports can reference
+current events.
 
-The default endpoint is the BBC Business RSS feed which requires no
-API key.  The feed URL can be changed via the ``NEWS_API_URL``
-environment variable.
+Multiple feed URLs can be specified via the ``NEWS_API_URL``
+environment variable as a comma-separated list.  Each headline is
+enriched with its publish date and RSS category tags so the LLM
+receives richer temporal and topical context.
 """
 
 from __future__ import annotations
 
+import html
+import re
 import xml.etree.ElementTree as ET
+from email.utils import parsedate_to_datetime
 from typing import Any
 
 import httpx
@@ -24,25 +29,41 @@ logger = structlog.get_logger(__name__)
 
 _DEFAULT_MAX_ITEMS = 10
 
+# Regex to strip HTML tags from RSS descriptions
+_HTML_TAG_RE = re.compile(r"<[^>]+>")
+
+
+def _strip_html(text: str) -> str:
+    """Remove HTML tags and decode entities from *text*."""
+    cleaned = _HTML_TAG_RE.sub("", text)
+    return html.unescape(cleaned).strip()
+
+
+def _parse_feed_urls(raw: str) -> list[str]:
+    """Split a comma-separated string of feed URLs into a list.
+
+    Whitespace around each URL is stripped and empty entries are
+    discarded.
+    """
+    return [u.strip() for u in raw.split(",") if u.strip()]
+
 
 def fetch_news_headlines(
     feed_url: str,
     *,
     max_items: int = _DEFAULT_MAX_ITEMS,
-) -> list[dict[str, str]]:
+) -> list[dict[str, Any]]:
     """Fetch news headlines from an RSS feed.
 
     Makes a GET request to ``feed_url`` and parses the XML response
     as an RSS 2.0 feed.  Each ``<item>`` element is expected to
     contain ``<title>`` and ``<description>`` children.
 
-    Args:
-        feed_url: URL of the RSS feed.
-        max_items: Maximum number of headlines to return (default 10).
-
     Returns:
-        A list of dicts with keys ``title``, ``description``, and
-        ``source``.  Returns an empty list on any failure.
+        A list of dicts with keys ``title``, ``description``,
+        ``source``, ``published`` (ISO-8601 string or ``""``), and
+        ``categories`` (list of strings).  Returns an empty list on
+        any failure.
     """
     try:
         resp = httpx.get(feed_url, timeout=15.0)
@@ -65,20 +86,68 @@ def fetch_news_headlines(
 
     feed_title = (channel.findtext("title") or "").strip() or "Unknown"
 
-    headlines: list[dict[str, str]] = []
+    headlines: list[dict[str, Any]] = []
     for item in channel.findall("item"):
         if len(headlines) >= max_items:
             break
         title = (item.findtext("title") or "").strip()
         if not title:
             continue
-        description = (item.findtext("description") or "").strip()
+
+        raw_desc = (item.findtext("description") or "").strip()
+        description = _strip_html(raw_desc)
+
+        # Parse pubDate (RFC-2822) into ISO-8601
+        published = ""
+        pub_date_text = (item.findtext("pubDate") or "").strip()
+        if pub_date_text:
+            try:
+                published = parsedate_to_datetime(pub_date_text).isoformat()
+            except Exception:
+                pass
+
+        # Collect <category> tags
+        categories = [
+            (cat.text or "").strip()
+            for cat in item.findall("category")
+            if (cat.text or "").strip()
+        ]
+
         headlines.append({
             "title": title,
             "description": description,
             "source": feed_title,
+            "published": published,
+            "categories": categories,
         })
     return headlines
+
+
+def fetch_all_news_headlines(
+    feed_urls: list[str],
+    *,
+    max_items: int = _DEFAULT_MAX_ITEMS,
+) -> list[dict[str, Any]]:
+    """Fetch and merge headlines from multiple RSS feeds.
+
+    Headlines are deduplicated by normalised title across all feeds.
+    The combined result is capped at *max_items* and sorted newest-first
+    when publish dates are available.
+    """
+    all_headlines: list[dict[str, Any]] = []
+    seen_titles: set[str] = set()
+
+    for url in feed_urls:
+        for headline in fetch_news_headlines(url, max_items=max_items):
+            normalised = headline["title"].lower().strip()
+            if normalised not in seen_titles:
+                seen_titles.add(normalised)
+                all_headlines.append(headline)
+
+    # Sort by published date descending (entries without dates last)
+    all_headlines.sort(key=lambda h: h.get("published") or "", reverse=True)
+
+    return all_headlines[:max_items]
 
 
 class NewsSpecialist(BaseSpecialist):
@@ -91,9 +160,9 @@ class NewsSpecialist(BaseSpecialist):
     @property
     def description(self) -> str:
         return (
-            "Fetches world and business news headlines from a free RSS feed "
-            "to provide current-events context for the commentary agent. "
-            "Call after analysis and before commentary."
+            "Fetches world and business news headlines from one or more "
+            "free RSS feeds to provide current-events context for the "
+            "commentary agent. Call after analysis and before commentary."
         )
 
     def get_system_prompt(self) -> str:
@@ -103,7 +172,9 @@ class NewsSpecialist(BaseSpecialist):
             "1. Fetch the latest business news headlines using fetch_news\n"
             "2. The news context will be forwarded to the commentary agent "
             "to enrich its market analysis with current events.\n\n"
-            "The news feed is a free RSS endpoint — no API key is needed."
+            "The news feeds are free RSS endpoints — no API key is needed.\n"
+            "Headlines include publish dates and category tags to help the "
+            "commentary agent assess recency and relevance."
         )
 
     def create_tools(self, ctx: AgentContext) -> list[Any]:
@@ -118,13 +189,21 @@ class NewsSpecialist(BaseSpecialist):
             if not ctx.settings.news_api_url:
                 return "SKIP: No news feed URL configured. News context will be empty."
 
-            headlines = fetch_news_headlines(ctx.settings.news_api_url)
+            feed_urls = _parse_feed_urls(ctx.settings.news_api_url)
+            if not feed_urls:
+                return "SKIP: No valid feed URLs found. News context will be empty."
+
+            headlines = fetch_all_news_headlines(feed_urls)
             self._headlines = headlines
 
             if not headlines:
-                return "No headlines fetched (feed may be unavailable)."
+                return "No headlines fetched (feeds may be unavailable)."
 
-            return f"Fetched {len(headlines)} news headlines."
+            sources = {h["source"] for h in headlines}
+            return (
+                f"Fetched {len(headlines)} news headlines "
+                f"from {len(sources)} source(s)."
+            )
 
         return [fetch_news]
 
@@ -135,14 +214,24 @@ class NewsSpecialist(BaseSpecialist):
     ) -> None:
         """Fetch news headlines (procedural)."""
         if not ctx.settings.news_api_url:
-            self._headlines: list[dict[str, str]] = []
+            self._headlines: list[dict[str, Any]] = []
             return
 
-        headlines = fetch_news_headlines(ctx.settings.news_api_url)
+        feed_urls = _parse_feed_urls(ctx.settings.news_api_url)
+        if not feed_urls:
+            self._headlines = []
+            return
+
+        headlines = fetch_all_news_headlines(feed_urls)
         self._headlines = headlines
 
         if headlines:
-            logger.info("news_fetched", headline_count=len(headlines))
+            sources = {h["source"] for h in headlines}
+            logger.info(
+                "news_fetched",
+                headline_count=len(headlines),
+                source_count=len(sources),
+            )
         else:
             logger.info("news_none_fetched")
 

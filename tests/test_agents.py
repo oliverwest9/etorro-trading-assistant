@@ -597,6 +597,92 @@ class TestNewsSpecialistProcedural:
         assert len(tools) == 1
         assert tools[0].name == "fetch_news"
 
+    def test_multi_feed_procedural(
+        self, test_settings: Settings, httpx_mock
+    ) -> None:
+        from agent.agents.specialists.news import NewsSpecialist
+
+        rss_b = """\
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>World News</title>
+    <item>
+      <title>Geopolitical tensions rise</title>
+      <description>Tensions escalated overnight.</description>
+    </item>
+  </channel>
+</rss>"""
+
+        test_settings.news_api_url = (
+            "https://rss.example.com/business.xml,"
+            "https://rss.example.com/world.xml"
+        )
+        httpx_mock.add_response(
+            url="https://rss.example.com/business.xml",
+            text=_RSS_FEED_XML,
+        )
+        httpx_mock.add_response(
+            url="https://rss.example.com/world.xml",
+            text=rss_b,
+        )
+
+        ctx = AgentContext(
+            db=MagicMock(), client=MagicMock(), settings=test_settings,
+            run_id="run-1", run_type="market_open",
+        )
+        spec = NewsSpecialist()
+        state: dict[str, Any] = {}
+        spec.run_procedural(state, ctx)
+        result = spec.process_results(state, ctx)
+
+        assert result["news_context"] is not None
+        assert len(result["news_context"]) == 3
+        sources = {h["source"] for h in result["news_context"]}
+        assert "BBC Business News" in sources
+        assert "World News" in sources
+
+    def test_headlines_include_published_and_categories(
+        self, test_settings: Settings, httpx_mock
+    ) -> None:
+        from agent.agents.specialists.news import NewsSpecialist
+
+        rss = """\
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>Test Feed</title>
+    <item>
+      <title>Rich headline</title>
+      <description>&lt;p&gt;HTML desc&lt;/p&gt;</description>
+      <pubDate>Mon, 01 Jan 2024 12:00:00 GMT</pubDate>
+      <category>Economy</category>
+      <category>Markets</category>
+    </item>
+  </channel>
+</rss>"""
+
+        test_settings.news_api_url = "https://rss.example.com/rich.xml"
+        httpx_mock.add_response(
+            url="https://rss.example.com/rich.xml",
+            text=rss,
+        )
+
+        ctx = AgentContext(
+            db=MagicMock(), client=MagicMock(), settings=test_settings,
+            run_id="run-1", run_type="market_open",
+        )
+        spec = NewsSpecialist()
+        state: dict[str, Any] = {}
+        spec.run_procedural(state, ctx)
+        result = spec.process_results(state, ctx)
+
+        assert result["news_context"] is not None
+        headline = result["news_context"][0]
+        assert headline["published"].startswith("2024-01-01")
+        assert headline["categories"] == ["Economy", "Markets"]
+        assert headline["description"] == "HTML desc"
+
 
 # ---------------------------------------------------------------------------
 # fetch_news_headlines unit tests
@@ -671,6 +757,299 @@ class TestFetchNewsHeadlines:
             "https://rss.example.com/feed.xml", max_items=1,
         )
         assert len(result) == 1
+
+    def test_parses_pub_date(self, httpx_mock) -> None:
+        from agent.agents.specialists.news import fetch_news_headlines
+
+        rss = """\
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>News Feed</title>
+    <item>
+      <title>Dated headline</title>
+      <description>With a date.</description>
+      <pubDate>Mon, 01 Jan 2024 12:00:00 GMT</pubDate>
+    </item>
+  </channel>
+</rss>"""
+        httpx_mock.add_response(
+            url="https://rss.example.com/feed.xml",
+            text=rss,
+        )
+        result = fetch_news_headlines("https://rss.example.com/feed.xml")
+        assert len(result) == 1
+        assert result[0]["published"].startswith("2024-01-01")
+
+    def test_parses_categories(self, httpx_mock) -> None:
+        from agent.agents.specialists.news import fetch_news_headlines
+
+        rss = """\
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>News Feed</title>
+    <item>
+      <title>Categorised headline</title>
+      <description>Tagged story.</description>
+      <category>Economy</category>
+      <category>Markets</category>
+    </item>
+  </channel>
+</rss>"""
+        httpx_mock.add_response(
+            url="https://rss.example.com/feed.xml",
+            text=rss,
+        )
+        result = fetch_news_headlines("https://rss.example.com/feed.xml")
+        assert len(result) == 1
+        assert result[0]["categories"] == ["Economy", "Markets"]
+
+    def test_strips_html_from_description(self, httpx_mock) -> None:
+        from agent.agents.specialists.news import fetch_news_headlines
+
+        rss = """\
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>News Feed</title>
+    <item>
+      <title>HTML description</title>
+      <description>&lt;p&gt;Some &lt;b&gt;bold&lt;/b&gt; text &amp;amp; more.&lt;/p&gt;</description>
+    </item>
+  </channel>
+</rss>"""
+        httpx_mock.add_response(
+            url="https://rss.example.com/feed.xml",
+            text=rss,
+        )
+        result = fetch_news_headlines("https://rss.example.com/feed.xml")
+        assert len(result) == 1
+        assert result[0]["description"] == "Some bold text & more."
+
+    def test_missing_pub_date_returns_empty_string(self, httpx_mock) -> None:
+        from agent.agents.specialists.news import fetch_news_headlines
+
+        httpx_mock.add_response(
+            url="https://rss.example.com/feed.xml",
+            text=_RSS_FEED_XML,
+        )
+        result = fetch_news_headlines("https://rss.example.com/feed.xml")
+        assert result[0]["published"] == ""
+
+    def test_missing_categories_returns_empty_list(self, httpx_mock) -> None:
+        from agent.agents.specialists.news import fetch_news_headlines
+
+        httpx_mock.add_response(
+            url="https://rss.example.com/feed.xml",
+            text=_RSS_FEED_XML,
+        )
+        result = fetch_news_headlines("https://rss.example.com/feed.xml")
+        assert result[0]["categories"] == []
+
+
+# ---------------------------------------------------------------------------
+# _strip_html unit tests
+# ---------------------------------------------------------------------------
+
+
+class TestStripHtml:
+    """Test the _strip_html helper function."""
+
+    def test_removes_html_tags(self) -> None:
+        from agent.agents.specialists.news import _strip_html
+
+        assert _strip_html("<p>Hello <b>world</b></p>") == "Hello world"
+
+    def test_decodes_html_entities(self) -> None:
+        from agent.agents.specialists.news import _strip_html
+
+        assert _strip_html("&amp; &lt; &gt;") == "& < >"
+
+    def test_handles_plain_text(self) -> None:
+        from agent.agents.specialists.news import _strip_html
+
+        assert _strip_html("No tags here") == "No tags here"
+
+    def test_handles_empty_string(self) -> None:
+        from agent.agents.specialists.news import _strip_html
+
+        assert _strip_html("") == ""
+
+
+# ---------------------------------------------------------------------------
+# _parse_feed_urls unit tests
+# ---------------------------------------------------------------------------
+
+
+class TestParseFeedUrls:
+    """Test the _parse_feed_urls helper function."""
+
+    def test_single_url(self) -> None:
+        from agent.agents.specialists.news import _parse_feed_urls
+
+        result = _parse_feed_urls("https://example.com/feed.xml")
+        assert result == ["https://example.com/feed.xml"]
+
+    def test_multiple_urls(self) -> None:
+        from agent.agents.specialists.news import _parse_feed_urls
+
+        result = _parse_feed_urls(
+            "https://example.com/a.xml,https://example.com/b.xml"
+        )
+        assert result == [
+            "https://example.com/a.xml",
+            "https://example.com/b.xml",
+        ]
+
+    def test_strips_whitespace(self) -> None:
+        from agent.agents.specialists.news import _parse_feed_urls
+
+        result = _parse_feed_urls(
+            " https://example.com/a.xml , https://example.com/b.xml "
+        )
+        assert result == [
+            "https://example.com/a.xml",
+            "https://example.com/b.xml",
+        ]
+
+    def test_empty_string(self) -> None:
+        from agent.agents.specialists.news import _parse_feed_urls
+
+        assert _parse_feed_urls("") == []
+
+    def test_ignores_empty_entries(self) -> None:
+        from agent.agents.specialists.news import _parse_feed_urls
+
+        result = _parse_feed_urls("https://example.com/a.xml,,")
+        assert result == ["https://example.com/a.xml"]
+
+
+# ---------------------------------------------------------------------------
+# fetch_all_news_headlines unit tests
+# ---------------------------------------------------------------------------
+
+
+class TestFetchAllNewsHeadlines:
+    """Test the fetch_all_news_headlines multi-feed function."""
+
+    def test_merges_multiple_feeds(self, httpx_mock) -> None:
+        from agent.agents.specialists.news import fetch_all_news_headlines
+
+        rss_a = """\
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>Feed A</title>
+    <item><title>Story A</title><description>Desc A</description></item>
+  </channel>
+</rss>"""
+        rss_b = """\
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>Feed B</title>
+    <item><title>Story B</title><description>Desc B</description></item>
+  </channel>
+</rss>"""
+        httpx_mock.add_response(url="https://a.example.com/feed.xml", text=rss_a)
+        httpx_mock.add_response(url="https://b.example.com/feed.xml", text=rss_b)
+
+        result = fetch_all_news_headlines([
+            "https://a.example.com/feed.xml",
+            "https://b.example.com/feed.xml",
+        ])
+        assert len(result) == 2
+        titles = {h["title"] for h in result}
+        assert titles == {"Story A", "Story B"}
+
+    def test_deduplicates_by_title(self, httpx_mock) -> None:
+        from agent.agents.specialists.news import fetch_all_news_headlines
+
+        rss_a = """\
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>Feed A</title>
+    <item><title>Same headline</title><description>From A</description></item>
+  </channel>
+</rss>"""
+        rss_b = """\
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>Feed B</title>
+    <item><title>Same headline</title><description>From B</description></item>
+  </channel>
+</rss>"""
+        httpx_mock.add_response(url="https://a.example.com/feed.xml", text=rss_a)
+        httpx_mock.add_response(url="https://b.example.com/feed.xml", text=rss_b)
+
+        result = fetch_all_news_headlines([
+            "https://a.example.com/feed.xml",
+            "https://b.example.com/feed.xml",
+        ])
+        assert len(result) == 1
+
+    def test_sorts_by_published_date_descending(self, httpx_mock) -> None:
+        from agent.agents.specialists.news import fetch_all_news_headlines
+
+        rss = """\
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>Feed</title>
+    <item>
+      <title>Older</title>
+      <description>Old</description>
+      <pubDate>Mon, 01 Jan 2024 10:00:00 GMT</pubDate>
+    </item>
+    <item>
+      <title>Newer</title>
+      <description>New</description>
+      <pubDate>Tue, 02 Jan 2024 10:00:00 GMT</pubDate>
+    </item>
+  </channel>
+</rss>"""
+        httpx_mock.add_response(url="https://x.example.com/feed.xml", text=rss)
+        result = fetch_all_news_headlines(["https://x.example.com/feed.xml"])
+        assert result[0]["title"] == "Newer"
+        assert result[1]["title"] == "Older"
+
+    def test_respects_max_items(self, httpx_mock) -> None:
+        from agent.agents.specialists.news import fetch_all_news_headlines
+
+        httpx_mock.add_response(
+            url="https://rss.example.com/feed.xml",
+            text=_RSS_FEED_XML,
+        )
+        result = fetch_all_news_headlines(
+            ["https://rss.example.com/feed.xml"], max_items=1,
+        )
+        assert len(result) == 1
+
+    def test_handles_partial_feed_failure(self, httpx_mock) -> None:
+        from agent.agents.specialists.news import fetch_all_news_headlines
+
+        httpx_mock.add_response(
+            url="https://a.example.com/feed.xml",
+            status_code=500,
+        )
+        httpx_mock.add_response(
+            url="https://b.example.com/feed.xml",
+            text=_RSS_FEED_XML,
+        )
+
+        result = fetch_all_news_headlines([
+            "https://a.example.com/feed.xml",
+            "https://b.example.com/feed.xml",
+        ])
+        assert len(result) == 2
+
+    def test_empty_url_list(self) -> None:
+        from agent.agents.specialists.news import fetch_all_news_headlines
+
+        assert fetch_all_news_headlines([]) == []
 
 
 # ---------------------------------------------------------------------------
