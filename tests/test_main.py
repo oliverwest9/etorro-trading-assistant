@@ -411,7 +411,7 @@ class TestTelegramSummaryBuilder:
                     SimpleNamespace(symbol="BTC", action="sell", conviction="High"),
                     SimpleNamespace(symbol="AAPL", action="hold", conviction="Medium"),
                     SimpleNamespace(symbol="TSLA", action="reduce", conviction="Low"),
-                    SimpleNamespace(symbol="MSFT", action="increase", conviction="Medium"),
+                    SimpleNamespace(symbol="MSFT", action="INCREASE", conviction="Medium"),
                 ]
             ),
         )

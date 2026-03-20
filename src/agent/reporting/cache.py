@@ -54,7 +54,12 @@ def _normalize_candle_counts(raw_value: Any) -> dict[int, int]:
 
     normalized: dict[int, int] = {}
     for key, value in raw_value.items():
-        normalized[int(key)] = int(value)
+        try:
+            normalized[int(key)] = int(value)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(
+                f"invalid candle_counts entry: key={key!r}, value={value!r}"
+            ) from exc
     return normalized
 
 
