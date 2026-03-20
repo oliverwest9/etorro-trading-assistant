@@ -419,7 +419,8 @@ class TestCompileResult:
         assert result.bullish_signals == 2
         assert result.bearish_signals == 1
         assert result.neutral_signals == 1
-        # Directional: 3 signals, 2 correct → 66.67%
+        # Directional: 3 signals, 2 correct -> 66.67%
         assert result.hit_rate_pct == pytest.approx(66.67, abs=0.01)
-        # Gains: |10.0| + |-5.0| = 15.0; Losses: |-2.0| = 2.0
+        # Gains: abs(10.0) from correct bullish + abs(-5.0) from correct bearish = 15.0
+        # Losses: abs(-2.0) from incorrect bullish = 2.0
         assert result.profit_factor == pytest.approx(7.5, abs=0.01)

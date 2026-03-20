@@ -281,8 +281,9 @@ class BacktestResult:
         avg_forward_return_pct: Average forward return across all signals.
         avg_bullish_return_pct: Average forward return for bullish signals.
         avg_bearish_return_pct: Average forward return for bearish signals.
-        profit_factor: Gross bullish-correct gains / gross bearish-incorrect
-            losses (> 1.0 means the signals are net-profitable).
+        profit_factor: Gross gains from correct directional signals /
+            gross losses from incorrect directional signals
+            (> 1.0 means the signals are net-profitable).
         events: Full list of individual signal events.
     """
 
