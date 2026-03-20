@@ -45,6 +45,11 @@ class TestBuildParser:
         args = parser.parse_args(["--run-type", "market_open", "--send-telegram"])
         assert args.send_telegram is True
 
+    def test_cache_report_flag(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["--run-type", "market_open", "--cache-report"])
+        assert args.cache_report is True
+
     def test_invalid_run_type_rejected(self) -> None:
         parser = build_parser()
         with pytest.raises(SystemExit):
@@ -70,8 +75,10 @@ class TestMain:
     @patch("agent.main.format_terminal")
     @patch("agent.main.format_markdown", return_value="# Report")
     @patch("agent.main._maybe_send_telegram_summary")
+    @patch("agent.main.cache_report")
     def test_successful_run_returns_zero(
         self,
+        mock_cache_report: MagicMock,
         mock_send_telegram: MagicMock,
         mock_format_md: MagicMock,
         mock_format_term: MagicMock,
@@ -101,6 +108,7 @@ class TestMain:
         assert exit_code == 0
         mock_orch.run_data_pipeline.assert_called_once_with("market_open")
         mock_format_term.assert_called_once_with(mock_report, verbose=False)
+        mock_cache_report.assert_not_called()
         mock_send_telegram.assert_called_once()
 
     @patch("agent.main.configure_logging")
@@ -149,8 +157,10 @@ class TestMain:
     @patch("agent.main.format_terminal")
     @patch("agent.main.format_markdown", return_value="# Report")
     @patch("agent.main._maybe_send_telegram_summary")
+    @patch("agent.main.cache_report")
     def test_verbose_passed_through(
         self,
+        mock_cache_report: MagicMock,
         mock_send_telegram: MagicMock,
         mock_format_md: MagicMock,
         mock_format_term: MagicMock,
@@ -178,6 +188,45 @@ class TestMain:
 
         mock_format_term.assert_called_once_with(mock_report, verbose=True)
         mock_format_md.assert_called_once_with(mock_report, verbose=True)
+        mock_cache_report.assert_not_called()
+        mock_send_telegram.assert_called_once()
+
+    @patch("agent.main.configure_logging")
+    @patch("agent.main.get_settings")
+    @patch("agent.main.Orchestrator")
+    @patch("agent.main.format_terminal")
+    @patch("agent.main.format_markdown", return_value="# Report")
+    @patch("agent.main._maybe_send_telegram_summary")
+    @patch("agent.main.cache_report", return_value="reports/cache/run-123.json")
+    def test_cache_report_flag_writes_cache(
+        self,
+        mock_cache_report: MagicMock,
+        mock_send_telegram: MagicMock,
+        mock_format_md: MagicMock,
+        mock_format_term: MagicMock,
+        mock_orch_cls: MagicMock,
+        mock_settings: MagicMock,
+        mock_logging: MagicMock,
+    ) -> None:
+        mock_report = MagicMock()
+        mock_orch = MagicMock()
+        mock_orch.run_data_pipeline.return_value = {
+            "report": mock_report,
+            "duration_ms": 500,
+        }
+        mock_orch.__enter__ = MagicMock(return_value=mock_orch)
+        mock_orch.__exit__ = MagicMock(return_value=False)
+        mock_orch_cls.return_value = mock_orch
+
+        with patch("agent.main.Path") as mock_path_cls:
+            mock_dir = MagicMock()
+            mock_path_cls.return_value = mock_dir
+            mock_dir.__truediv__ = MagicMock(return_value=MagicMock())
+
+            exit_code = main(["--run-type", "market_open", "--cache-report"])
+
+        assert exit_code == 0
+        mock_cache_report.assert_called_once_with(mock_report)
         mock_send_telegram.assert_called_once()
 
     @patch("agent.main.configure_logging")
@@ -362,17 +411,12 @@ class TestTelegramSummaryBuilder:
                     SimpleNamespace(symbol="BTC", action="sell", conviction="High"),
                     SimpleNamespace(symbol="AAPL", action="hold", conviction="Medium"),
                     SimpleNamespace(symbol="TSLA", action="reduce", conviction="Low"),
+                    SimpleNamespace(symbol="MSFT", action="INCREASE", conviction="Medium"),
                 ]
             ),
         )
 
-        summary = {
-            "instruments_processed": 12,
-            "analyses_created": 12,
-            "instruments_failed": 1,
-        }
-
-        message = _build_telegram_summary(report, summary)
+        message = _build_telegram_summary(report)
 
         assert "📊 Portfolio Snapshot" in message
         assert "Market Open" in message
@@ -385,9 +429,11 @@ class TestTelegramSummaryBuilder:
         assert "📈 Recommended Actions" in message
         assert "- SELL: 1" in message
         assert "- REDUCE: 1" in message
+        assert "- INCREASE: 1" in message
         assert "- HOLD:" not in message  # HOLD actions are filtered out
         assert "🎯 Top Actions" in message
         assert "- BTC: SELL (High)" in message
+        assert "- MSFT: INCREASE (Medium)" in message
         # HOLD actions filtered out from both sections
         assert "- LAR: HOLD" not in message
         assert "- TSLA: HOLD" not in message
@@ -409,13 +455,7 @@ class TestTelegramSummaryBuilder:
             commentary=None,
         )
 
-        summary = {
-            "instruments_processed": 1,
-            "analyses_created": 1,
-            "instruments_failed": 0,
-        }
-
-        message = _build_telegram_summary(report, summary)
+        message = _build_telegram_summary(report)
 
         assert "📊 Portfolio Snapshot" in message
         assert "Market Close" in message

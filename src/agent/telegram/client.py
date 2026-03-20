@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 import time
 from contextlib import contextmanager
-from typing import Any
+from typing import Any, Iterator
 
 import httpx
 
@@ -63,10 +63,19 @@ class TelegramClient:
             f"/bot{self._bot_token}/sendMessage",
             json=payload,
         )
-        return response.json()
+        try:
+            response_data = response.json()
+        except ValueError as exc:
+            raise TelegramRequestError("Telegram returned an invalid JSON response.") from exc
+
+        if not response_data.get("ok", False):
+            description = response_data.get("description", "Unknown Telegram API error.")
+            raise TelegramRequestError(f"Telegram API rejected the request: {description}")
+
+        return response_data
 
     @contextmanager
-    def _suppress_http_request_logs(self):
+    def _suppress_http_request_logs(self) -> Iterator[None]:
         """Temporarily suppress request-level logs that can contain tokenized URLs."""
         logger_names = ("httpx", "httpcore")
         loggers = [logging.getLogger(name) for name in logger_names]
@@ -107,7 +116,7 @@ class TelegramClient:
                 last_exc = exc
                 if attempt >= self._max_retries:
                     raise TelegramRequestError(
-                        f"Request failed after {self._max_retries} attempts: {exc}"
+                        f"Request failed after {self._max_retries} attempts due to a network error."
                     ) from exc
                 self._sleep_backoff(attempt)
                 continue

@@ -43,7 +43,10 @@ def list_reports() -> None:
     reports = list_cached_reports()
     if not reports:
         console.print("[yellow]No cached reports found in reports/cache/[/yellow]")
-        console.print("Run the agent with: [bold]python -m agent.main --run-type market_open[/bold]")
+        console.print(
+            "Run the agent with: "
+            "[bold]python -m agent.main --run-type market_open --cache-report[/bold]"
+        )
         return
 
     console.print(f"\n[bold green]Available cached reports ({len(reports)}):[/bold green]\n")
@@ -93,8 +96,7 @@ def show_report(run_id: str, raw: bool = False, compare: bool = False) -> None:
         console.print(Panel(syntax, title="Raw Report Data", expand=False))
     else:
         # Build and show Telegram message
-        summary = {}  # Empty summary dict for message builder
-        message = _build_telegram_summary(report, summary)
+        message = _build_telegram_summary(report)
 
         console.print(Panel(message, title="Telegram Message", border_style="green", expand=False))
 

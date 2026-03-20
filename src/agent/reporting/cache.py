@@ -45,6 +45,24 @@ def _parse_generated_at(raw_value: Any) -> datetime:
         raise ValueError(f"invalid generated_at value: {raw_value}") from exc
 
 
+def _normalize_candle_counts(raw_value: Any) -> dict[int, int]:
+    """Convert JSON-loaded candle count keys back to integers."""
+    if raw_value is None:
+        return {}
+    if not isinstance(raw_value, dict):
+        raise ValueError("candle_counts must be an object")
+
+    normalized: dict[int, int] = {}
+    for key, value in raw_value.items():
+        try:
+            normalized[int(key)] = int(value)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(
+                f"invalid candle_counts entry: key={key!r}, value={value!r}"
+            ) from exc
+    return normalized
+
+
 def cache_report(report: Report, cache_dir: Path = Path("reports/cache")) -> Path:
     """Serialize a Report to a JSON cache file.
 
@@ -112,6 +130,7 @@ def load_cached_report(run_id: str, cache_dir: Path = Path("reports/cache")) -> 
 
         # Rebuild nested structures
         data["generated_at"] = _parse_generated_at(data.get("generated_at"))
+        data["candle_counts"] = _normalize_candle_counts(data.get("candle_counts"))
 
         # Snapshot
         snapshot_data = data["snapshot"]

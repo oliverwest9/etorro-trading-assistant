@@ -70,7 +70,7 @@ def get_cached_report(run_id: str, cache_dir: Path = Path("reports/cache")) -> R
     Example::
 
         report = get_cached_report("market_open_2026_03_19_044449")
-        message = _build_telegram_summary(report, {})
+        message = _build_telegram_summary(report)
 
     Args:
         run_id: The run_id of the report to load.
