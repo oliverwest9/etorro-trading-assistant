@@ -679,7 +679,7 @@ class TestNewsSpecialistProcedural:
 
         assert result["news_context"] is not None
         headline = result["news_context"][0]
-        assert headline["published"].startswith("2024-01-01")
+        assert headline["published"] == "2024-01-01T12:00:00+00:00"
         assert headline["categories"] == ["Economy", "Markets"]
         assert headline["description"] == "HTML desc"
 
@@ -779,7 +779,7 @@ class TestFetchNewsHeadlines:
         )
         result = fetch_news_headlines("https://rss.example.com/feed.xml")
         assert len(result) == 1
-        assert result[0]["published"].startswith("2024-01-01")
+        assert result[0]["published"] == "2024-01-01T12:00:00+00:00"
 
     def test_parses_categories(self, httpx_mock) -> None:
         from agent.agents.specialists.news import fetch_news_headlines

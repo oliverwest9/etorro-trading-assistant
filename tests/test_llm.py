@@ -435,7 +435,7 @@ class TestFormatPrompt:
 
         assert "World News Headlines" in prompt
         assert "Rate hike expected" in prompt
-        assert "2024-01-15" in prompt
+        assert "[2024-01-15]" in prompt
         assert "(Reuters)" in prompt
 
     def test_news_headlines_include_categories(self):

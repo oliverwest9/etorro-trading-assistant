@@ -97,7 +97,9 @@ def fetch_news_headlines(
         raw_desc = (item.findtext("description") or "").strip()
         description = _strip_html(raw_desc)
 
-        # Parse pubDate (RFC-2822) into ISO-8601
+        # Parse pubDate (RFC-2822) into ISO-8601.
+        # parsedate_to_datetime returns timezone-aware datetime when the
+        # RFC-2822 string includes a timezone (e.g. "GMT", "+0000").
         published = ""
         pub_date_text = (item.findtext("pubDate") or "").strip()
         if pub_date_text:

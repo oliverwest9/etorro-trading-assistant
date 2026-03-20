@@ -394,7 +394,9 @@ def format_prompt(request: CommentaryRequest) -> str:
             if h.source:
                 line += f" ({h.source})"
             if h.published:
-                line += f" [{h.published}]"
+                # Show just the date portion for readability
+                date_display = h.published[:10] if len(h.published) >= 10 else h.published
+                line += f" [{date_display}]"
             lines.append(line)
             if h.categories:
                 lines.append(f"  Topics: {', '.join(h.categories)}")
