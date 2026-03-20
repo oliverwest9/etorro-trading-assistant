@@ -236,3 +236,63 @@ class CriticResult:
     )
     diversification: DiversificationAssessment | None = None
     portfolio_summary: PortfolioRiskSummary | None = None
+
+
+# =====================================================================
+# Backtesting result types
+# =====================================================================
+
+
+@dataclass(frozen=True)
+class SignalEvent:
+    """A single signal generated during a backtest walk-forward evaluation.
+
+    Attributes:
+        index: Position in the candle series where the signal was generated.
+        signal: Direction — ``"bullish"``, ``"bearish"``, or ``"neutral"``.
+        strength: Signal strength (0.0–1.0).
+        entry_price: Close price at the time the signal was generated.
+        exit_price: Close price ``forward_period`` candles later.
+        forward_return_pct: Percentage return over the forward period.
+        correct: Whether the signal direction matched the actual return
+            (bullish → positive return, bearish → negative return).
+    """
+
+    index: int
+    signal: str
+    strength: float
+    entry_price: float
+    exit_price: float
+    forward_return_pct: float
+    correct: bool
+
+
+@dataclass(frozen=True)
+class BacktestResult:
+    """Aggregate backtesting metrics from a walk-forward signal evaluation.
+
+    Attributes:
+        total_signals: Total number of signals generated.
+        bullish_signals: Count of bullish signals.
+        bearish_signals: Count of bearish signals.
+        neutral_signals: Count of neutral signals.
+        hit_rate_pct: Percentage of directional (non-neutral) signals
+            where the predicted direction matched actual price movement.
+        avg_forward_return_pct: Average forward return across all signals.
+        avg_bullish_return_pct: Average forward return for bullish signals.
+        avg_bearish_return_pct: Average forward return for bearish signals.
+        profit_factor: Gross bullish-correct gains / gross bearish-incorrect
+            losses (> 1.0 means the signals are net-profitable).
+        events: Full list of individual signal events.
+    """
+
+    total_signals: int
+    bullish_signals: int
+    bearish_signals: int
+    neutral_signals: int
+    hit_rate_pct: float
+    avg_forward_return_pct: float
+    avg_bullish_return_pct: float
+    avg_bearish_return_pct: float
+    profit_factor: float
+    events: list[SignalEvent] = field(default_factory=list)
