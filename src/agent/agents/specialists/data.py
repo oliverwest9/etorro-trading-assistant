@@ -20,7 +20,7 @@ from agent.db.snapshots import create_snapshot, get_latest_snapshot
 from agent.etoro.client import EToroError
 from agent.etoro.market_data import get_candles
 from agent.etoro.models import Instrument, InstrumentSearchResponse
-from agent.etoro.portfolio import get_portfolio
+from agent.etoro.portfolio import get_portfolio, resolve_currency_symbol
 
 logger = structlog.get_logger(__name__)
 
@@ -71,6 +71,13 @@ class DataSpecialist(BaseSpecialist):
             portfolio = portfolio_resp.client_portfolio
             snapshot = create_snapshot(ctx.db, portfolio, ctx.run_type)
             snapshot_id = str(snapshot.get("id", ""))
+
+            # Resolve account currency from the API response
+            currency = resolve_currency_symbol(
+                portfolio.account_currency_id,
+                fallback=ctx.settings.currency_symbol,
+            )
+            self._currency_symbol = currency
 
             instrument_ids = sorted(
                 {pos.instrument_id for pos in portfolio.positions}
@@ -183,6 +190,12 @@ class DataSpecialist(BaseSpecialist):
         portfolio = portfolio_resp.client_portfolio
         create_snapshot(ctx.db, portfolio, ctx.run_type)
 
+        # Resolve account currency from the API response
+        self._currency_symbol = resolve_currency_symbol(
+            portfolio.account_currency_id,
+            fallback=ctx.settings.currency_symbol,
+        )
+
         instrument_ids = sorted(
             {pos.instrument_id for pos in portfolio.positions}
         )
@@ -248,6 +261,7 @@ class DataSpecialist(BaseSpecialist):
                 "instrument_ids": [],
                 "instrument_map": {},
                 "candle_counts": {},
+                "currency_symbol": self.get_currency_symbol(ctx),
             }
 
         snapshot_id = str(snapshot.get("id", ""))
@@ -279,4 +293,5 @@ class DataSpecialist(BaseSpecialist):
             "instrument_ids": instrument_ids,
             "instrument_map": instrument_map,
             "candle_counts": candle_counts,
+            "currency_symbol": self.get_currency_symbol(ctx),
         }

@@ -280,7 +280,8 @@ def _extract_pnl(position: dict[str, Any]) -> float | None:
 
 SYSTEM_PROMPT = """\
 You are an experienced portfolio advisor analysing an eToro portfolio \
-with a long-term, inflation-beating investment strategy. You have been \
+with a long-term, inflation-beating investment strategy. The portfolio \
+is denominated in GBP (British pounds). You have been \
 given the current portfolio state and technical analysis data for each \
 position. Your job is to:
 
@@ -296,7 +297,7 @@ low) and clear reasoning referencing the technical data. "Accumulate" \
 means gradually build a larger position over time.
 
 Guidelines:
-- Focus on long-term capital growth that beats inflation (~3-4 % per annum). \
+- Focus on long-term capital growth that beats UK inflation (~3-4 % per annum). \
 Evaluate whether each position contributes to that goal over months to \
 years, not days.
 - Be specific — reference actual price levels, support/resistance, \
@@ -321,14 +322,19 @@ Respond with valid JSON matching the provided schema.\
 """
 
 
-def format_prompt(request: CommentaryRequest) -> str:
+def format_prompt(request: CommentaryRequest, *, currency_symbol: str = "£") -> str:
     """Render a ``CommentaryRequest`` into the full user-message prompt.
 
     The returned string is what gets sent as the user message to the
     LLM (alongside the system prompt).  It is deterministic and can be
     inspected without making any API calls.
+
+    Args:
+        request: The assembled commentary request.
+        currency_symbol: Currency symbol to prefix monetary values.
     """
     lines: list[str] = []
+    cs = currency_symbol
 
     # Header
     run_label = request.run_type.replace("_", " ").title()
@@ -337,10 +343,10 @@ def format_prompt(request: CommentaryRequest) -> str:
 
     # Portfolio overview
     lines.append("## Portfolio Overview")
-    lines.append(f"- Total value: ${request.total_value:,.2f}")
-    lines.append(f"- Cash available: ${request.cash_available:,.2f}")
+    lines.append(f"- Total value: {cs}{request.total_value:,.2f}")
+    lines.append(f"- Cash available: {cs}{request.cash_available:,.2f}")
     lines.append(f"- Open positions: {request.open_positions_count}")
-    lines.append(f"- Total P&L: ${request.total_pnl:,.2f}")
+    lines.append(f"- Total P&L: {cs}{request.total_pnl:,.2f}")
     lines.append("")
 
     # Sector overview
@@ -363,16 +369,16 @@ def format_prompt(request: CommentaryRequest) -> str:
         for i, p in enumerate(request.positions, 1):
             lines.append(f"### {i}. {p.symbol} — {p.name}")
             lines.append(f"- Direction: {p.direction}")
-            lines.append(f"- Open rate: ${p.open_rate:,.4f}")
-            lines.append(f"- Amount invested: ${p.amount:,.2f}")
+            lines.append(f"- Open rate: {cs}{p.open_rate:,.4f}")
+            lines.append(f"- Amount invested: {cs}{p.amount:,.2f}")
             lines.append(f"- Units: {p.units:.4f}")
             if p.pnl is not None:
-                lines.append(f"- Unrealised P&L: ${p.pnl:,.2f}")
+                lines.append(f"- Unrealised P&L: {cs}{p.pnl:,.2f}")
             lines.append(f"- Trend: {p.trend} (strength: {p.trend_strength:.2f})")
             if p.support is not None:
-                lines.append(f"- Support: ${p.support:,.4f}")
+                lines.append(f"- Support: {cs}{p.support:,.4f}")
             if p.resistance is not None:
-                lines.append(f"- Resistance: ${p.resistance:,.4f}")
+                lines.append(f"- Resistance: {cs}{p.resistance:,.4f}")
             lines.append(f"- Momentum: {p.momentum_signal}")
             if p.sector_group:
                 sector_line = f"- Sector: {p.sector_group}"
@@ -405,6 +411,8 @@ def format_prompt(request: CommentaryRequest) -> str:
 def generate_commentary(
     request: CommentaryRequest,
     settings: Settings,
+    *,
+    currency_symbol: str | None = None,
 ) -> CommentaryResponse:
     """Send the commentary request to Google Gemini and parse the response.
 
@@ -414,6 +422,8 @@ def generate_commentary(
     Args:
         request: The assembled commentary request.
         settings: Application settings (provides API key and model name).
+        currency_symbol: Currency symbol override. When ``None``,
+            falls back to ``settings.currency_symbol``.
 
     Returns:
         Parsed ``CommentaryResponse``.
@@ -426,7 +436,8 @@ def generate_commentary(
 
     client = genai.Client(api_key=settings.llm_api_key)
 
-    prompt = format_prompt(request)
+    cs = currency_symbol if currency_symbol is not None else settings.currency_symbol
+    prompt = format_prompt(request, currency_symbol=cs)
 
     logger.info(
         "llm_request",

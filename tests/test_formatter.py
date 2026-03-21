@@ -237,9 +237,9 @@ def test_format_markdown_portfolio_overview_values() -> None:
     report = _make_report()
     md = format_markdown(report)
 
-    assert "$1,500.00" in md
-    assert "$500.00" in md
-    assert "$200.00" in md
+    assert "£1,500.00" in md
+    assert "£500.00" in md
+    assert "£200.00" in md
     assert "Open positions:** 2" in md
 
 

@@ -14,6 +14,42 @@ from agent.etoro.models import (
 
 logger = structlog.get_logger(__name__)
 
+# Mapping of eToro ``accountCurrencyId`` values to display symbols.
+# Source: eToro platform internal currency identifiers.
+_CURRENCY_ID_TO_SYMBOL: dict[int, str] = {
+    1: "$",   # USD
+    2: "€",   # EUR
+    4: "A$",  # AUD
+    5: "£",   # GBP
+}
+
+
+def resolve_currency_symbol(
+    account_currency_id: int | None,
+    *,
+    fallback: str = "£",
+) -> str:
+    """Map an eToro ``accountCurrencyId`` to a display currency symbol.
+
+    Args:
+        account_currency_id: The numeric currency ID from the API.
+        fallback: Symbol to return when the ID is ``None`` or unknown.
+
+    Returns:
+        A currency symbol string such as ``"£"`` or ``"$"``.
+    """
+    if account_currency_id is None:
+        return fallback
+    symbol = _CURRENCY_ID_TO_SYMBOL.get(account_currency_id)
+    if symbol is None:
+        logger.warning(
+            "unknown_currency_id",
+            account_currency_id=account_currency_id,
+            fallback=fallback,
+        )
+        return fallback
+    return symbol
+
 # Default lookback period for trading history when no min_date is provided
 _DEFAULT_HISTORY_DAYS = 90
 

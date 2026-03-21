@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from types import SimpleNamespace
-from unittest.mock import MagicMock, patch
+from unittest.mock import ANY, MagicMock, patch
 
 import pytest
 
@@ -107,7 +107,11 @@ class TestMain:
 
         assert exit_code == 0
         mock_orch.run_data_pipeline.assert_called_once_with("market_open")
-        mock_format_term.assert_called_once_with(mock_report, verbose=False)
+        mock_format_term.assert_called_once_with(
+            mock_report,
+            verbose=False,
+            currency_symbol=ANY,
+        )
         mock_cache_report.assert_not_called()
         mock_send_telegram.assert_called_once()
 
@@ -186,8 +190,16 @@ class TestMain:
 
             main(["--run-type", "market_close", "--verbose"])
 
-        mock_format_term.assert_called_once_with(mock_report, verbose=True)
-        mock_format_md.assert_called_once_with(mock_report, verbose=True)
+        mock_format_term.assert_called_once_with(
+            mock_report,
+            verbose=True,
+            currency_symbol=ANY,
+        )
+        mock_format_md.assert_called_once_with(
+            mock_report,
+            verbose=True,
+            currency_symbol=ANY,
+        )
         mock_cache_report.assert_not_called()
         mock_send_telegram.assert_called_once()
 
@@ -416,12 +428,12 @@ class TestTelegramSummaryBuilder:
             ),
         )
 
-        message = _build_telegram_summary(report)
+        message = _build_telegram_summary(report, currency_symbol="£")
 
         assert "📊 Portfolio Snapshot" in message
         assert "Market Open" in message
         assert "⏰ 2026-03-19 05:30 UTC" in message
-        assert "$1,234.56" in message
+        assert "£1,234.56" in message
         assert "🌍 Market Overview" in message
         assert "Mixed market signals overall." in message
         assert "💼 Portfolio Impact" in message
@@ -455,12 +467,12 @@ class TestTelegramSummaryBuilder:
             commentary=None,
         )
 
-        message = _build_telegram_summary(report)
+        message = _build_telegram_summary(report, currency_symbol="£")
 
         assert "📊 Portfolio Snapshot" in message
         assert "Market Close" in message
         assert "⏰ 2026-03-19 16:30 UTC" in message
-        assert "$50.00" in message
+        assert "£50.00" in message
         assert "No recommendations were generated" in message
         assert "🎯 Top Actions" in message
         assert "- No actionable recommendations" in message

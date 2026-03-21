@@ -69,7 +69,7 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _build_telegram_summary(report: Report) -> str:
+def _build_telegram_summary(report: Report, *, currency_symbol: str = "£") -> str:
     """Build a conversational Telegram summary with market context and recommendations."""
     def _to_float(value: object, default: float = 0.0) -> float:
         try:
@@ -124,8 +124,9 @@ def _build_telegram_summary(report: Report) -> str:
     # Portfolio overview with emoji
     portfolio_section = (
         f"📊 Portfolio Snapshot ({run_label}){timestamp_str}\n"
-        f"Positions: {open_positions}  •  Value: ${total_value:,.2f}\n"
-        f"Cash: ${cash_available:,.2f}  •  P&L: ${total_pnl:,.2f}"
+        f"Positions: {open_positions}  •  Value: {currency_symbol}{total_value:,.2f}\n"
+        f"Cash: {currency_symbol}{cash_available:,.2f}  •  "
+        f"P&L: {currency_symbol}{total_pnl:,.2f}"
     )
 
     # Market overview and portfolio impact - split into separate sections
@@ -219,12 +220,13 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     report = summary["report"]
+    cs = summary.get("currency_symbol", settings.currency_symbol)
 
     # Rich terminal output
-    format_terminal(report, verbose=args.verbose)
+    format_terminal(report, verbose=args.verbose, currency_symbol=cs)
 
     # Save markdown report to file
-    md = format_markdown(report, verbose=args.verbose)
+    md = format_markdown(report, verbose=args.verbose, currency_symbol=cs)
     reports_dir = Path("reports")
     reports_dir.mkdir(exist_ok=True)
     report_path = reports_dir / f"{ts_label}_{args.run_type}_pipeline.md"
@@ -238,7 +240,7 @@ def main(argv: list[str] | None = None) -> int:
         except Exception as exc:
             logger.warning("cache_report_failed", error=str(exc))
 
-    telegram_message = _build_telegram_summary(report)
+    telegram_message = _build_telegram_summary(report, currency_symbol=cs)
     _maybe_send_telegram_summary(
         send_requested=args.send_telegram,
         bot_token=settings.telegram_bot_token,

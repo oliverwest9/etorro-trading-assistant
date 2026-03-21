@@ -29,6 +29,7 @@ class Settings(BaseSettings):
 
     news_api_url: str = ""
 
+    currency_symbol: str = "£"
     telegram_bot_token: str = ""
     telegram_chat_id: str = ""
 

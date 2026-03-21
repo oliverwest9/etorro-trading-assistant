@@ -311,9 +311,9 @@ class TestFormatPrompt:
         prompt = format_prompt(req)
 
         assert "Market Open" in prompt
-        assert "$500.00" in prompt
-        assert "$50.00" in prompt
-        assert "$12.50" in prompt
+        assert "£500.00" in prompt
+        assert "£50.00" in prompt
+        assert "£12.50" in prompt
 
     def test_contains_position_data(self):
         req = build_commentary_request(
