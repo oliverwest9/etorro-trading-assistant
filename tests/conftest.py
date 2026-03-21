@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Generator
 from unittest.mock import patch
 
@@ -11,6 +12,8 @@ from surrealdb.connections.sync_template import SyncTemplate
 from agent.config import Settings
 from agent.db.connection import get_connection
 from agent.db.schema import apply_schema
+from agent.reporting.cache import load_cached_report, list_cached_reports
+from agent.reporting.generator import Report
 
 
 def _test_settings() -> Settings:
@@ -54,3 +57,31 @@ def _no_routing_model() -> Generator[None, None, None]:
     """Disable LLM routing in all tests so no real Gemini calls are made."""
     with patch("agent.orchestrator._create_routing_model", return_value=None):
         yield
+
+
+# =====================================================================
+# Report Caching Helpers
+# =====================================================================
+
+
+def get_cached_report(run_id: str, cache_dir: Path = Path("reports/cache")) -> Report | None:
+    """Load a cached report by run_id for testing message formatting.
+
+    Example::
+
+        report = get_cached_report("market_open_2026_03_19_044449")
+        message = _build_telegram_summary(report)
+
+    Args:
+        run_id: The run_id of the report to load.
+        cache_dir: Directory containing cache files (default: reports/cache).
+
+    Returns:
+        Report instance if found, else None.
+    """
+    return load_cached_report(run_id, cache_dir)
+
+
+def list_report_caches(cache_dir: Path = Path("reports/cache")) -> list[str]:
+    """List all available cached report run_ids."""
+    return list_cached_reports(cache_dir)
